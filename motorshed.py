@@ -1,15 +1,17 @@
+import networkx as nx
 import osmnx as ox
-import requests
-import time
+import time,pickle,requests
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
 import matplotlib.cm as cm
 import requests_cache
 from contexttimer import Timer
-import pickle
-import pandas as pd
 
 from bokeh.io import export_png, export_svgs
+from bokeh.plotting import figure
+from bokeh.models import HoverTool, ColumnDataSource
+from bokeh.palettes import Magma256,Viridis256,Greys256,Cividis256,Inferno256,Plasma256
 
 # Cache HTTP requests (other than map requests, which I think are too complicated
 #  to do this with). This is a SQLITE cache that never expires.
@@ -66,7 +68,8 @@ def osrm(G, origin_node, center_node, missing_nodes, mode='driving', localhost=F
 
 
 def get_map(address, place=None, distance=1000):
-    """Get the graph (G) and center_node from OSMNX, initializes through_traffic, transit_time, and calculated.
+    """Get the graph (G) and center_node from OSMNX, 
+    initializes through_traffic, transit_time, and calculated to zero.
     Uses local cache (via Pickle) when possible."""
 
     if place is not None: distance = 100
@@ -164,6 +167,34 @@ def find_all_routes(G, center_node, max_requests=None, show_progress=False):
 
     return missing_edges, missing_nodes
 
+def set_width_and_color(G, color_by='through_traffic', cmap_name='magma', 
+                        palette_name='magma', min_intensity_ratio=.05, 
+                        min_width=0.0):
+    """Assign width and color for G"""
+
+    palettes = {'magma':Magma256, 'viridis':Viridis256, 'greys':Greys256, 
+                'cividis':Cividis256, 'inferno':Inferno256, 'plasma':Plasma256}
+    palette = palettes[palette_name]
+
+    edge_intensity = np.log2(np.array([data['through_traffic'] for u, v, data in G.edges(data=True)]))
+    edge_widths = (edge_intensity / edge_intensity.max() ) * 2 + min_width
+
+    if color_by == 'through_traffic':
+        edge_intensity = (edge_intensity / edge_intensity.max()) * (1 - min_intensity_ratio) + min_intensity_ratio
+        edge_intensity = (edge_intensity * 255).astype(np.uint8)
+        
+    elif color_by == 'transit_time':
+        edge_intensity = np.array([G.node[u]['transit_time'] + G.node[v]['transit_time'] for u,v in G.edges()])
+        edge_intensity = (edge_intensity / edge_intensity.max()) * (1 - min_intensity_ratio) + min_intensity_ratio
+        edge_intensity = (255 - edge_intensity * 255).astype(np.uint8)
+
+    edge_colors = [palette[intensity] for intensity in edge_intensity]
+
+    color_dict = dict(zip(G.edges(keys=True), edge_colors))
+    width_dict = dict(zip(G.edges(keys=True), edge_widths.tolist()))
+
+    nx.set_edge_attributes(G, color_dict, 'color')
+    nx.set_edge_attributes(G, width_dict, 'width')
 
 def draw_map(G, center_node, color_by='through_traffic', cmap_name='magma', save=True):
     """Draw the map using OSMNX, coloring by through_traffic or by transit_time"""
@@ -183,6 +214,9 @@ def draw_map(G, center_node, color_by='through_traffic', cmap_name='magma', save
     cmap = cm.get_cmap(name=cmap_name)
     edge_colors = cmap(edge_intensity)
 
+    edge_colors = G.edges(data='color')
+    edge_widths = G.edges(data='widths')
+
     fig, ax = ox.plot_graph(G, edge_color=edge_colors, edge_linewidth=edge_widths, equal_aspect=True,
                             node_size=0, save=True, fig_height=14, fig_width=16, use_geom=True,
                             close=False, show=False, bgcolor='k')
@@ -199,41 +233,28 @@ def draw_map(G, center_node, color_by='through_traffic', cmap_name='magma', save
     if save: fig.savefig('map.png', facecolor=fig.get_facecolor(), dpi=600)
     # fig.show()
 
-from bokeh.plotting import figure
-from bokeh.models import HoverTool, ColumnDataSource
-
-from bokeh.palettes import Magma256,Viridis256,Greys256,Cividis256,Inferno256,Plasma256
-
 def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, plot_height=1000, 
-                   toolbar_location=None, output_backend='canvas', min_intensity_ratio=.05, 
+                   toolbar_location=None, output_backend='svg', min_intensity_ratio=.05, 
                    min_width=0.0, palette_name='magma'):
     """Creates a Bokeh map that can either be displayed live (e.g., in a notebook or webpage) or saved to disk.
 
-    If saving as svg, set output_backend to 'svg'."""
+    output_backend: 'svg' or 'canvas'. I'm not sure which is better.
+
+    This makes prettier plots than draw_map.
+    """
 
     if type(center_node) is not list: 
         center_node = [center_node]
 
-    palette = {'magma':Magma256, 'viridis':Viridis256, 'greys':Greys256, 
-               'cividis':Cividis256, 'inferno':Inferno256, 'plasma':Plasma256}
-    palette = palette[palette_name]
-
-    edge_intensity = np.log2(np.array([data['through_traffic'] for u, v, data in G.edges(data=True)]))
-    edge_widths = (edge_intensity / edge_intensity.max() ) * 2 + min_width
-
-    if color_by == 'through_traffic':
-        edge_intensity = (edge_intensity / edge_intensity.max() ) * (1 - min_intensity_ratio) + min_intensity_ratio
-        edge_intensity = (edge_intensity*255).astype(np.uint8)
-        
-    elif color_by == 'transit_time':
-        edge_intensity = np.array([G.node[u]['transit_time'] + G.node[v]['transit_time'] for u,v in G.edges()])
-        edge_intensity = (edge_intensity / edge_intensity.max() ) * (1 - min_intensity_ratio) + min_intensity_ratio
-        edge_intensity = (255 - edge_intensity*255).astype(np.uint8)
+    if color_by: set_width_and_color(G, color_by, palette_name, 
+                                     min_intensity_ratio=min_intensity_ratio, 
+                                     min_width=min_width)
 
     lines = []
-    for (u, v, data), width, intensity in zip(G.edges(keys=False, data=True), edge_widths, edge_intensity):
-        edge_intensity = intensity
-        color = palette[edge_intensity]
+    for u, v, data in G.edges(keys=False, data=True):
+        through_traffic = data['through_traffic']
+        width = data['width']
+        color = data['color']
         if 'geometry' in data:
             xs, ys = data['geometry'].xy
         else:
@@ -242,8 +263,10 @@ def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, 
             xs = (G.nodes[u]['x'], G.nodes[v]['x'])
             ys = (G.nodes[u]['y'], G.nodes[v]['y'])
 
-        line = {'xs': tuple(xs), 'ys': tuple(ys), 'color': color, 'width': width, 'u':u, 'v':v,
-                'through_traffic': data['through_traffic'],
+        line = {'xs': tuple(xs), 'ys': tuple(ys),
+                'u': u, 'v': v, 
+                'color': color, 'width': width, 
+                'through_traffic': through_traffic,
                 # 'name': data.get('name', ''),
                 # 'oneway': data.get('oneway', ''),
                 # 'highway': data.get('highway', ''),
