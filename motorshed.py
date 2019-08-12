@@ -1,6 +1,6 @@
 import networkx as nx
 import osmnx as ox
-import time,pickle,requests
+import time,pickle,requests,random
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -26,13 +26,16 @@ def chunks(l, n):
 
 
 def get_transit_times(G, origin_point):
-    """Calculate transit_time for every node in the graph"""
+    """
+    Calculate transit_time for every node in the graph. This is much 
+    faster than calculating the route for every node in the graph.
+    """
 
     end = '%s,%s' % (origin_point[1], origin_point[0])
     starts = ['%s,%s' % (data['lon'], data['lat']) for n, data in G.node(data=True)]
     times = []
 
-    # the table service seems limited in number
+    # the table service seems limited in number, but it's ultra fast
     for chunk in chunks(starts, 300):
         chunk = ';'.join(chunk)
         query = 'http://router.project-osrm.org/table/v1/driving/%s;%s?sources=0' % (end, chunk)
@@ -42,14 +45,17 @@ def get_transit_times(G, origin_point):
     for n, node in enumerate(G.node):
         G.node[node]['transit_time'] = times[n]
 
+    for u, v, k in G.edges(keys=True):
+        G.edges[u, v, k]['transit_time'] = (G.node[u]['transit_time'] + 
+                                            G.node[v]['transit_time']) / 2
 
-def osrm(G, origin_node, center_node, missing_nodes, mode='driving', localhost=False):
+def osrm(G, origin_node, center_node, missing_nodes, mode='driving', local_host=False):
     """Query the local or remote OSRM for route and transit time"""
 
     start = '%f,%f' % (G.node[origin_node]['lon'], G.node[origin_node]['lat'])
     end = '%f,%f' % (G.node[center_node]['lon'], G.node[center_node]['lat'])
 
-    if localhost:
+    if local_host:
         query = 'http://localhost:5000/route/v1/%s/%s;%s?steps=true&annotations=true' % (mode, start, end)
     else:
         query = 'http://router.project-osrm.org/route/v1/%s/%s;%s?steps=true&annotations=true' % (mode, start, end)
@@ -72,8 +78,6 @@ def get_map(address, place=None, distance=1000):
     initializes through_traffic, transit_time, and calculated to zero.
     Uses local cache (via Pickle) when possible."""
 
-    if place is not None: distance = 100
-
     # calculate fn for cache using fxn arguments.
     fn = "%s.%s%s.cache.pkl" % (address, place or '', distance)
     try:
@@ -85,23 +89,24 @@ def get_map(address, place=None, distance=1000):
         # If cache miss, then load from netowrk.
         print('Cache miss. Loading.')
 
-        G, origin_point = ox.graph_from_address(address, distance=distance,
-                                                network_type='all', return_coords=True)
-
-        if place is not None:
+        if place is None:
+            G, origin_point = ox.graph_from_address(address, distance=distance,
+                                                    network_type='all', return_coords=True)
+        else:
             G = ox.graph_from_place(place, network_type='drive')
+            origin_point = ox.geocode(address)
 
         # get center node:
         center_node = ox.get_nearest_node(G, origin_point)
 
-        G = ox.project_graph(G)
+        G = ox.project_graph(G) # move this to the plotting functions?
 
         # initialize edge traffic to 1, source node traffic to 1:
-        for u, v, k, data in G.edges(data=True, keys=True):
-            data['through_traffic'] = 1 # BASELINE
+        for u, v, k in G.edges(keys=True):
+            G.edges[u, v, k]['through_traffic'] = 1 # BASELINE
 
-        for node, data in G.nodes(data=True):
-            data['calculated'] = False
+        for node in G.nodes():
+            G.node[node]['calculated'] = False
 
         # Save to cache for next time.
         with open(fn, 'wb') as f:
@@ -119,8 +124,10 @@ def increment_edges(route, G, missing_edges):
             if not G.node[i0]['calculated']:
                 accum_traffic += 1
             try:
-                G.edges[i0, i1, 0]['through_traffic'] += accum_traffic # new way
-            except KeyError:
+                if G.get_edge_data(i0, i1) != None:
+                    for k in G.get_edge_data(i0, i1):
+                        G.edges[i0, i1, k]['through_traffic'] += accum_traffic
+            except KeyError or TypeError:
                 missing_edges.update((i0, i1))
                 # continue
 
@@ -128,8 +135,16 @@ def increment_edges(route, G, missing_edges):
         # increment_edges(route[1:], G, missing_edges)
 
 
-def find_all_routes(G, center_node, max_requests=None, show_progress=False):
-    """Run through the nodes in the graph, calculate routes, and recursively increment edges"""
+def find_all_routes(G, center_node, max_requests=None, show_progress=False,
+                    order_method='transit_time', start_far_away=True,
+                    local_host=False):
+    """
+    Attempt to calculate routes from all nodes in G, and increment edges
+    
+    This algorithm uses OSRM to find routes from every node in the graph to 
+    the center_node. For every route it recursively increments edges such that 
+    every transit through an edge adds to 'through_traffic'.
+    """
 
     missing_edges = set([])
     missing_nodes = set([])
@@ -137,17 +152,24 @@ def find_all_routes(G, center_node, max_requests=None, show_progress=False):
     n_requests = 0
     frame = 0
 
+    if order_method == 'transit_time':
+        order_fn = lambda x: x[1]['transit_time']
+    else:
+        order_fn = lambda x: random.random()
+
     # duration_threshold = pd.Series([G.nodes[n]['transit_time'] for n in G.nodes]).max() # * .5
     # print('SHOWING TRAVEL FROM ADDRESSES WITHIN %.1f MINUTES.' % (duration_threshold/60.0))
-    ordered_graph = sorted(G.nodes(data=True), key=lambda x: x[1]['transit_time'])
+    ordered_graph = sorted(G.nodes(data=True), key=order_fn, reverse=start_far_away)
     for n,(origin_node,data) in enumerate(tqdm(ordered_graph)):
         if not G.node[origin_node]['calculated']:# and G.node[origin_node]['transit_time'] < duration_threshold:
             n_requests += 1
             # print('calculating (%d / %s).' % (n_requests, max_requests))
             try:
-                route, transit_time, r = osrm(G, origin_node, center_node, missing_nodes, mode='driving')
-                route = [node for node in route if node in list(G)]
-                increment_edges(route, G, missing_edges)
+                route, transit_time, r = osrm(G, origin_node, center_node, 
+                                              missing_nodes, mode='driving',
+                                              local_host=local_host)
+                route = [node for node in route if node in G.node]
+                increment_edges(route, transit_time, G, missing_edges)
                 if max_requests and (n_requests >= max_requests):
                     print('Max requests reached.')
                     break
@@ -169,24 +191,20 @@ def find_all_routes(G, center_node, max_requests=None, show_progress=False):
 
 def set_width_and_color(G, color_by='through_traffic', cmap_name='magma', 
                         palette_name='magma', min_intensity_ratio=.05, 
-                        min_width=0.0):
+                        min_width=0.0, max_width=3.0):
     """Assign width and color for G"""
 
     palettes = {'magma':Magma256, 'viridis':Viridis256, 'greys':Greys256, 
                 'cividis':Cividis256, 'inferno':Inferno256, 'plasma':Plasma256}
     palette = palettes[palette_name]
 
-    edge_intensity = np.log2(np.array([data['through_traffic'] for u, v, data in G.edges(data=True)]))
-    edge_widths = (edge_intensity / edge_intensity.max() ) * 2 + min_width
+    edge_intensity = np.log2(np.array([data[color_by] for u, v, data in G.edges(data=True)]))
+    edge_widths = (edge_intensity / edge_intensity.max() ) * max_width + min_width
+    edge_intensity = (edge_intensity / edge_intensity.max()) * (1 - min_intensity_ratio) + min_intensity_ratio
+    edge_intensity = (edge_intensity * 255).astype(np.uint8)
 
-    if color_by == 'through_traffic':
-        edge_intensity = (edge_intensity / edge_intensity.max()) * (1 - min_intensity_ratio) + min_intensity_ratio
-        edge_intensity = (edge_intensity * 255).astype(np.uint8)
-        
-    elif color_by == 'transit_time':
-        edge_intensity = np.array([G.node[u]['transit_time'] + G.node[v]['transit_time'] for u,v in G.edges()])
-        edge_intensity = (edge_intensity / edge_intensity.max()) * (1 - min_intensity_ratio) + min_intensity_ratio
-        edge_intensity = (255 - edge_intensity * 255).astype(np.uint8)
+    if color_by == 'transit_time':
+        edge_intensity = 255 - edge_intensity # reverse palette
 
     edge_colors = [palette[intensity] for intensity in edge_intensity]
 
@@ -196,24 +214,15 @@ def set_width_and_color(G, color_by='through_traffic', cmap_name='magma',
     nx.set_edge_attributes(G, color_dict, 'color')
     nx.set_edge_attributes(G, width_dict, 'width')
 
-def draw_map(G, center_node, color_by='through_traffic', cmap_name='magma', save=True):
+def draw_map(G, center_node, color_by='through_traffic', palette_name='magma', 
+             save=True, min_intensity_ratio=0.05, min_width=0, max_width=3):
     """Draw the map using OSMNX, coloring by through_traffic or by transit_time"""
 
-    edge_intensity = np.log2(np.array([data['through_traffic'] for u, v, data in G.edges(data=True)]))
-    edge_widths = (edge_intensity / edge_intensity.max()) * 3  # + 1
+    if color_by: set_width_and_color(G, color_by, palette_name, 
+                                     min_intensity_ratio=min_intensity_ratio, 
+                                     min_width=min_width, max_width=max_width)
 
-    if color_by == 'through_traffic':
-        edge_intensity = (edge_intensity / edge_intensity.max()) * .95 + .05
-        edge_intensity = (edge_intensity * 255).astype(np.uint8)
-
-    elif color_by == 'transit_time':
-        edge_intensity = np.array([G.node[u]['transit_time'] + G.node[v]['transit_time'] for u, v in G.edges()])
-        edge_intensity = (edge_intensity / edge_intensity.max()) * .95 + .05
-        edge_intensity = (255 - edge_intensity * 255).astype(np.uint8)
-
-    cmap = cm.get_cmap(name=cmap_name)
-    edge_colors = cmap(edge_intensity)
-
+    # may need to convert these colors from hex to floats
     edge_colors = G.edges(data='color')
     edge_widths = G.edges(data='widths')
 
@@ -235,7 +244,7 @@ def draw_map(G, center_node, color_by='through_traffic', cmap_name='magma', save
 
 def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, plot_height=1000, 
                    toolbar_location=None, output_backend='svg', min_intensity_ratio=.05, 
-                   min_width=0.0, palette_name='magma'):
+                   min_width=0.0, max_width=3.0, palette_name='magma'):
     """Creates a Bokeh map that can either be displayed live (e.g., in a notebook or webpage) or saved to disk.
 
     output_backend: 'svg' or 'canvas'. I'm not sure which is better.
@@ -248,10 +257,10 @@ def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, 
 
     if color_by: set_width_and_color(G, color_by, palette_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
-                                     min_width=min_width)
+                                     min_width=min_width, max_width=max_width)
 
     lines = []
-    for u, v, data in G.edges(keys=False, data=True):
+    for u, v, k, data in G.edges(keys=True, data=True):
         through_traffic = data['through_traffic']
         width = data['width']
         color = data['color']
@@ -292,8 +301,8 @@ def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, 
     # for size,color,alpha in [(15,palette[0],0.25),(10,palette[127],0.3),
     #                          (5,palette[255],0.6),(2,'white',0.75)]:
     for cn in center_node:
-        for size,color,alpha in [(10,'white',0.25),(5,'white',0.3),
-                                (2,'white',0.6),(1,'white',0.75)]:
+        for size,color,alpha in [(15,'white',0.25),(10,'white',0.3),
+                                (5,'white',0.6),(2,'white',0.75)]:
             p.circle([G.node[cn]['x']], [G.node[cn]['y']],
                     color=color, size=size, alpha=alpha)
 
@@ -351,8 +360,7 @@ if __name__ == '__main__':
                        palette_name='inferno', toolbar_location=None)
 
     with Timer(prefix='SVG'):
-        export_svgs(p,
-                    filename=fn + '.svg')
+        export_svgs(p, filename=fn + '.svg')
 
     from bokeh.io import export_png
     with Timer(prefix='PNG'):
