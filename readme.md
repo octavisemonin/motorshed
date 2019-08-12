@@ -19,6 +19,7 @@ docker run -t -i -p 5000:5000 -v $(pwd):/data osrm/osrm-backend osrm-routed --al
 
 ```python
 import motorshed
+from bokeh.io import export_png
 address = 'Astoria, OR'
 G, center_node, origin_point = motorshed.get_map(address, distance=20000)
 ```
@@ -35,6 +36,7 @@ G, center_node, origin_point = motorshed.get_map(address, place=place)
 motorshed.get_transit_times(G, origin_point)
 missing_edges, missing_nodes = motorshed.find_all_routes(G, center_node)
 motorshed.make_bokeh_map(G, center_node, color_by='through_traffic')
+export_png(p, filename='Astoria OR.png')
 ```
 
 ![alt text](images/Clatsop.png "Clatsop County")
