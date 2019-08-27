@@ -162,14 +162,14 @@ def find_all_routes(G, center_node, max_requests=None, show_progress=False,
     ordered_graph = sorted(G.nodes(data=True), key=order_fn, reverse=start_far_away)
     for n,(origin_node,data) in enumerate(tqdm(ordered_graph)):
         if not G.node[origin_node]['calculated']:# and G.node[origin_node]['transit_time'] < duration_threshold:
+
             n_requests += 1
-            # print('calculating (%d / %s).' % (n_requests, max_requests))
             try:
                 route, transit_time, r = osrm(G, origin_node, center_node, 
                                               missing_nodes, mode='driving',
                                               local_host=local_host)
                 route = [node for node in route if node in G.node]
-                increment_edges(route, transit_time, G, missing_edges)
+                increment_edges(route, G, missing_edges)
                 if max_requests and (n_requests >= max_requests):
                     print('Max requests reached.')
                     break
