@@ -25,7 +25,7 @@ def chunks(l, n):
         yield l[i:i + n]
 
 
-def get_transit_times(G, origin_point):
+def get_transit_times(G, origin_point, mode='driving', local_host=False):
     """
     Calculate transit_time for every node in the graph. This is much 
     faster than calculating the route for every node in the graph.
@@ -38,7 +38,10 @@ def get_transit_times(G, origin_point):
     # the table service seems limited in number, but it's ultra fast
     for chunk in chunks(starts, 300):
         chunk = ';'.join(chunk)
-        query = 'http://router.project-osrm.org/table/v1/driving/%s;%s?sources=0' % (end, chunk)
+        if local_host:
+            query = 'http://localhost:5000/table/v1/%s/%s;%s?sources=0' % (mode, end, chunk)
+        else:
+            query = 'http://router.project-osrm.org/table/v1/%s/%s;%s?sources=0' % (mode, end, chunk)
         r = requests.get(query)
         times = times + r.json()['durations'][0][1:]
 
@@ -159,8 +162,8 @@ def find_all_routes(G, center_nodes, max_requests=None, show_progress=False,
 
     # duration_threshold = pd.Series([G.nodes[n]['transit_time'] for n in G.nodes]).max() # * .5
     # print('SHOWING TRAVEL FROM ADDRESSES WITHIN %.1f MINUTES.' % (duration_threshold/60.0))
-    ordered_graph = sorted(G.nodes(data=True), key=order_fn, reverse=start_far_away)
-    for n,(origin_node,data) in enumerate(tqdm(ordered_graph)):
+    ordered_graph = sorted(G.nodes(), key=order_fn, reverse=start_far_away)
+    for n,origin_node in enumerate(tqdm(ordered_graph)):
         if not G.node[origin_node]['calculated']:# and G.node[origin_node]['transit_time'] < duration_threshold:
             for center_node in center_nodes:
                 n_requests += 1
