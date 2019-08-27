@@ -135,14 +135,14 @@ def increment_edges(route, G, missing_edges):
         # increment_edges(route[1:], G, missing_edges)
 
 
-def find_all_routes(G, center_node, max_requests=None, show_progress=False,
+def find_all_routes(G, center_nodes, max_requests=None, show_progress=False,
                     order_method='transit_time', start_far_away=True,
                     local_host=False):
     """
     Attempt to calculate routes from all nodes in G, and increment edges
     
     This algorithm uses OSRM to find routes from every node in the graph to 
-    the center_node. For every route it recursively increments edges such that 
+    the center_nodes. For every route it recursively increments edges such that 
     every transit through an edge adds to 'through_traffic'.
     """
 
@@ -162,26 +162,24 @@ def find_all_routes(G, center_node, max_requests=None, show_progress=False,
     ordered_graph = sorted(G.nodes(data=True), key=order_fn, reverse=start_far_away)
     for n,(origin_node,data) in enumerate(tqdm(ordered_graph)):
         if not G.node[origin_node]['calculated']:# and G.node[origin_node]['transit_time'] < duration_threshold:
-
-            n_requests += 1
-            try:
-                route, transit_time, r = osrm(G, origin_node, center_node, 
-                                              missing_nodes, mode='driving',
-                                              local_host=local_host)
-                route = [node for node in route if node in G.node]
-                increment_edges(route, G, missing_edges)
-                if max_requests and (n_requests >= max_requests):
-                    print('Max requests reached.')
-                    break
-            except Exception as e:
-                print(e)
-        # else:
-            # print('skipping.')
+            for center_node in center_nodes:
+                n_requests += 1
+                try:
+                    route, transit_time, r = osrm(G, origin_node, center_node, 
+                                                missing_nodes, mode='driving',
+                                                local_host=local_host)
+                    route = [node for node in route if node in G.node]
+                    increment_edges(route, G, missing_edges)
+                    if max_requests and (n_requests >= max_requests):
+                        print('Max requests reached.')
+                        break
+                except Exception as e:
+                    print(e)
 
         if show_progress and n in range(1, len(G), len(G)//50):
             frame += 1
             fn = ("%s.%s.%02d" % (address, distance, frame)).replace(',', '')
-            p = make_bokeh_map(G, center_node, output_backend='svg', min_width=0.0, palette_name='viridis')
+            p = make_bokeh_map(G, center_nodes, output_backend='svg', min_width=0.0, palette_name='viridis')
             export_png(p, filename=fn + '.png')
 
     else:
@@ -214,9 +212,12 @@ def set_width_and_color(G, color_by='through_traffic', cmap_name='magma',
     nx.set_edge_attributes(G, color_dict, 'color')
     nx.set_edge_attributes(G, width_dict, 'width')
 
-def draw_map(G, center_node, color_by='through_traffic', palette_name='magma', 
+def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma', 
              save=True, min_intensity_ratio=0.05, min_width=0, max_width=3):
     """Draw the map using OSMNX, coloring by through_traffic or by transit_time"""
+
+    if type(center_nodes) is not list: 
+        center_nodes = [center_nodes]
 
     if color_by: set_width_and_color(G, color_by, palette_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
@@ -230,19 +231,20 @@ def draw_map(G, center_node, color_by='through_traffic', palette_name='magma',
                             node_size=0, save=True, fig_height=14, fig_width=16, use_geom=True,
                             close=False, show=False, bgcolor='k')
 
-    ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
-               color='red', s=150, zorder=10, alpha=.25)
-    ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
-               color='pink', s=100, zorder=10, alpha=.3)
-    ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
-               color='yellow', s=50, zorder=10, alpha=.6)
-    ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
-               color='white', s=30, zorder=10, alpha=.75)
+    for center_node in center_nodes:
+        ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
+                color='red', s=150, zorder=10, alpha=.25)
+        ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
+                color='pink', s=100, zorder=10, alpha=.3)
+        ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
+                color='yellow', s=50, zorder=10, alpha=.6)
+        ax.scatter([G.node[center_node]['x']], [G.node[center_node]['y']],
+                color='white', s=30, zorder=10, alpha=.75)
 
     if save: fig.savefig('map.png', facecolor=fig.get_facecolor(), dpi=600)
     # fig.show()
 
-def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, plot_height=1000, 
+def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000, plot_height=1000, 
                    toolbar_location=None, output_backend='svg', min_intensity_ratio=.05, 
                    min_width=0.0, max_width=3.0, palette_name='magma'):
     """Creates a Bokeh map that can either be displayed live (e.g., in a notebook or webpage) or saved to disk.
@@ -252,8 +254,8 @@ def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, 
     This makes prettier plots than draw_map.
     """
 
-    if type(center_node) is not list: 
-        center_node = [center_node]
+    if type(center_nodes) is not list: 
+        center_nodes = [center_nodes]
 
     if color_by: set_width_and_color(G, color_by, palette_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
@@ -300,7 +302,7 @@ def make_bokeh_map(G, center_node, color_by='through_traffic', plot_width=1000, 
                 line_join='round', line_cap='round')
     # for size,color,alpha in [(15,palette[0],0.25),(10,palette[127],0.3),
     #                          (5,palette[255],0.6),(2,'white',0.75)]:
-    for cn in center_node:
+    for cn in center_nodes:
         for size,color,alpha in [(15,'white',0.25),(10,'white',0.3),
                                 (5,'white',0.6),(2,'white',0.75)]:
             p.circle([G.node[cn]['x']], [G.node[cn]['y']],
