@@ -162,8 +162,8 @@ def find_all_routes(G, center_nodes, max_requests=None, show_progress=False,
 
     # duration_threshold = pd.Series([G.nodes[n]['transit_time'] for n in G.nodes]).max() # * .5
     # print('SHOWING TRAVEL FROM ADDRESSES WITHIN %.1f MINUTES.' % (duration_threshold/60.0))
-    ordered_graph = sorted(G.nodes(), key=order_fn, reverse=start_far_away)
-    for n,origin_node in enumerate(tqdm(ordered_graph)):
+    ordered_graph = sorted(G.nodes(data=True), key=order_fn, reverse=start_far_away)
+    for n,(origin_node,data) in enumerate(tqdm(ordered_graph)):
         if not G.node[origin_node]['calculated']:# and G.node[origin_node]['transit_time'] < duration_threshold:
             for center_node in center_nodes:
                 n_requests += 1
@@ -181,9 +181,8 @@ def find_all_routes(G, center_nodes, max_requests=None, show_progress=False,
 
         if show_progress and n in range(1, len(G), len(G)//50):
             frame += 1
-            fn = ("%s.%s.%02d" % (address, distance, frame)).replace(',', '')
             p = make_bokeh_map(G, center_nodes, output_backend='svg', min_width=0.0, palette_name='viridis')
-            export_png(p, filename=fn + '.png')
+            export_png(p, filename=f'{frame:02d}.png')
 
     else:
         print('Analyzed all nodes without reaching max requests.')
@@ -215,6 +214,17 @@ def set_width_and_color(G, color_by='through_traffic', cmap_name='magma',
     nx.set_edge_attributes(G, color_dict, 'color')
     nx.set_edge_attributes(G, width_dict, 'width')
 
+def drop_dead_edges(G, min_width=0.0):
+    dead_edges = []
+
+    for i0, i1, key, data in G.edges(data=True, keys=True):
+        if data['width'] == min_width:
+            dead_edges.append((i0,i1,key))
+
+    G_sample = G.copy()
+    G_sample.remove_edges_from(dead_edges)
+    return G_sample
+
 def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma', 
              save=True, min_intensity_ratio=0.05, min_width=0, max_width=3):
     """Draw the map using OSMNX, coloring by through_traffic or by transit_time"""
@@ -222,7 +232,7 @@ def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma',
     if type(center_nodes) is not list: 
         center_nodes = [center_nodes]
 
-    if color_by: set_width_and_color(G, color_by, palette_name, 
+    if color_by: set_width_and_color(G, color_by, cmap_name=cmap_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
                                      min_width=min_width, max_width=max_width)
 
@@ -249,9 +259,12 @@ def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma',
 
 def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000, plot_height=1000, 
                    toolbar_location=None, output_backend='svg', min_intensity_ratio=.05, 
-                   min_width=0.0, max_width=3.0, palette_name='magma'):
+                   min_width=0.0, max_width=3.0, palette_name='magma', border=0.2):
     """Creates a Bokeh map that can either be displayed live (e.g., in a notebook or webpage) or saved to disk.
 
+    plot_width: set to 8000 for large posters
+    plot_height: set to 8000 for large posters
+    max_width: set to 24 for large posters
     output_backend: 'svg' or 'canvas'. I'm not sure which is better.
 
     This makes prettier plots than draw_map.
@@ -260,9 +273,20 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
     if type(center_nodes) is not list: 
         center_nodes = [center_nodes]
 
-    if color_by: set_width_and_color(G, color_by, palette_name, 
+    if color_by: set_width_and_color(G, color_by, palette_name=palette_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
                                      min_width=min_width, max_width=max_width)
+
+    left = min([data['x'] for u, data in G.nodes(data=True)])
+    right = max([data['x'] for u, data in G.nodes(data=True)])
+    bottom = min([data['y'] for u, data in G.nodes(data=True)])
+    top = max([data['y'] for u, data in G.nodes(data=True)])
+    center = (left+right)/2, (top+bottom)/2
+    size = max(top-bottom, right-left) * (1 + border)
+
+    left,right = center[0] - size/2, center[0] + size/2
+    bottom,top = center[1] - size/2, center[1] + size/2
+    G = drop_dead_edges(G, min_width)
 
     lines = []
     for u, v, k, data in G.edges(keys=True, data=True):
@@ -293,14 +317,15 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
     df = df.sort_values('width')
     source = ColumnDataSource(df)
     p = figure(plot_width=plot_width, plot_height=plot_height, match_aspect=True, 
-               output_backend=output_backend, toolbar_location=toolbar_location)
+               output_backend=output_backend, toolbar_location=toolbar_location,
+               x_range=(left, right), y_range=(bottom, top))
     p.outline_line_color = None
     p.xaxis.visible = False
     p.yaxis.visible = False
     p.xgrid.visible = False
     p.ygrid.visible = False
     p.background_fill_color = "black" #None
-    p.border_fill_color = None
+    p.border_fill_color = "black" #None
     p.multi_line('xs', 'ys', source=source, color='color', line_width='width',
                 line_join='round', line_cap='round')
     # for size,color,alpha in [(15,palette[0],0.25),(10,palette[127],0.3),
