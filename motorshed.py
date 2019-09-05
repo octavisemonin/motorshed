@@ -76,30 +76,37 @@ def osrm(G, origin_node, center_node, missing_nodes, mode='driving', local_host=
     return route, transit_time, r
 
 
-def get_map(address, place=None, distance=1000):
+def get_map(location, place=None, distance=1000):
     """Get the graph (G) and center_node from OSMNX, 
     initializes through_traffic, transit_time, and calculated to zero.
     Uses local cache (via Pickle) when possible."""
 
     # calculate fn for cache using fxn arguments.
-    fn = "%s.%s%s.cache.pkl" % (address, place or '', distance)
+    fn = "%s.%s%s.cache.pkl" % (location, place or '', distance)
     try:
         # Try to load cache
         with open(fn, 'rb') as f:
             (G, center_node, origin_point) = pickle.load(f)
             return (G, center_node, origin_point)
     except:
-        # If cache miss, then load from netowrk.
+        # If cache miss, then load graph from osmnx.
         print('Cache miss. Loading.')
 
         if place is None:
-            G, origin_point = ox.graph_from_address(address, distance=distance,
-                                                    network_type='all', return_coords=True)
-        else:
-            G = ox.graph_from_place(place, network_type='drive')
-            origin_point = ox.geocode(address)
+            if type(location) is str:
+                G = ox.graph_from_address(location, distance=distance,
+                                          network_type='all')
+            elif type(location) is tuple:
+                G = ox.graph_from_point(location, distance=distance,
+                                        network_type='all')
+            else:
+                raise TypeError('location must be a string (address) or tuple (lat, lon)')
 
-        # get center node:
+        else:
+            G = ox.graph_from_place(place, network_type='all')
+
+        # get origin point and center node:
+        origin_point = ox.geocode(location) if type(location) is str else location
         center_node = ox.get_nearest_node(G, origin_point)
 
         G = ox.project_graph(G) # move this to the plotting functions?
