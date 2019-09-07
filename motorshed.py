@@ -8,6 +8,8 @@ import matplotlib.cm as cm
 import requests_cache
 from contexttimer import Timer
 
+from bokeh.resources import CDN
+from bokeh.embed import file_html
 from bokeh.io import export_png, export_svgs
 from bokeh.plotting import figure
 from bokeh.models import HoverTool, ColumnDataSource
@@ -189,7 +191,13 @@ def find_all_routes(G, center_nodes, max_requests=None, show_progress=False,
         if show_progress and n in range(1, len(G), len(G)//50):
             frame += 1
             p = make_bokeh_map(G, center_nodes, output_backend='svg', min_width=0.0, palette_name='viridis')
-            export_png(p, filename=f'{frame:02d}.png')
+            
+            if show_progress=='HTML':
+                html = file_html(p, CDN, 'progress')
+                with open('progress.html', 'w') as f:
+                    f.write(html)
+            else:
+                export_png(p, filename=f'{frame:02d}.png')
 
     else:
         print('Analyzed all nodes without reaching max requests.')
@@ -284,6 +292,7 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
                                      min_intensity_ratio=min_intensity_ratio, 
                                      min_width=min_width, max_width=max_width)
 
+    # create appropriate bounds for the map
     left = min([data['x'] for u, data in G.nodes(data=True)])
     right = max([data['x'] for u, data in G.nodes(data=True)])
     bottom = min([data['y'] for u, data in G.nodes(data=True)])
@@ -293,6 +302,9 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
 
     left,right = center[0] - size/2, center[0] + size/2
     bottom,top = center[1] - size/2, center[1] + size/2
+
+    # this saves a lot of time because you don't 
+    # have to render lines with zero width:
     G = drop_dead_edges(G, min_width)
 
     lines = []
@@ -312,9 +324,9 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
                 'u': u, 'v': v, 
                 'color': color, 'width': width, 
                 'through_traffic': through_traffic,
-                # 'name': data.get('name', ''),
+                'name': data.get('name', ''),
                 # 'oneway': data.get('oneway', ''),
-                # 'highway': data.get('highway', ''),
+                'highway': data.get('highway', ''),
                 # 'data': str(data.keys())
                 }
         lines.append(line)
@@ -326,13 +338,12 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
     p = figure(plot_width=plot_width, plot_height=plot_height, match_aspect=True, 
                output_backend=output_backend, toolbar_location=toolbar_location,
                x_range=(left, right), y_range=(bottom, top))
-    p.outline_line_color = None
-    p.xaxis.visible = False
-    p.yaxis.visible = False
-    p.xgrid.visible = False
-    p.ygrid.visible = False
-    p.background_fill_color = "black" #None
-    p.border_fill_color = "black" #None
+    p.axis.visible = False
+    p.grid.visible = False
+    p.background_fill_color = "black"
+    p.border_fill_color = "black"
+    p.outline_line_color = "black"
+
     p.multi_line('xs', 'ys', source=source, color='color', line_width='width',
                 line_join='round', line_cap='round')
     # for size,color,alpha in [(15,palette[0],0.25),(10,palette[127],0.3),
@@ -346,12 +357,12 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
     hover = HoverTool(tooltips=[#('xs', '@xs'),
                                 #('ys', '@ys'),
                                 # ('color', '@color'),
-                                ('width', '@width'),
-                                ('u', '@u'),
-                                ('v', '@v'),
-                                # ('name', '@name'),
-                                ('through_traffic', '@through_traffic'),
-                                # ('highway', '@highway'),
+                                # ('u', '@u'),
+                                # ('v', '@v'),
+                                ('name', '@name'),
+                                ('highway', '@highway'),
+                                ('through traffic', '@through_traffic transits'),
+                                # ('width', '@width'),
                                 # ('oneway', '@oneway'),
                                 # ('data', '@data'),
                                ])
@@ -399,13 +410,8 @@ if __name__ == '__main__':
     with Timer(prefix='SVG'):
         export_svgs(p, filename=fn + '.svg')
 
-    from bokeh.io import export_png
     with Timer(prefix='PNG'):
         export_png(p, filename=fn+'.png')
-
-
-    from bokeh.resources import CDN
-    from bokeh.embed import file_html
 
     with Timer(prefix='HTML'):
         html = file_html(p, CDN, fn)
