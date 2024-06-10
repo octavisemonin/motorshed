@@ -61,7 +61,7 @@ def get_transit_times(G, origin_point, mode='driving', local_host=False):
                                                 G.nodes[v]['transit_time']) / 2
         except TypeError:
             missing_nodes.update((u,v))
-            missing_edges.update((u,v))
+            missing_edges.add((u,v))
             G.edges[u, v, k]['transit_time'] = np.NaN
             G.nodes[u]['transit_time'] = np.NaN
             G.nodes[v]['transit_time'] = np.NaN
@@ -108,10 +108,10 @@ def get_map(location, place=None, distance=1000):
 
         if place is None:
             if type(location) is str:
-                G = ox.graph_from_address(location, distance=distance,
+                G = ox.graph_from_address(location, dist=distance,
                                           network_type='all')
             elif type(location) is tuple:
-                G = ox.graph_from_point(location, distance=distance,
+                G = ox.graph_from_point(location, dist=distance,
                                         network_type='all')
             else:
                 raise TypeError('location must be a string (address) or tuple (lat, lon)')
@@ -121,7 +121,7 @@ def get_map(location, place=None, distance=1000):
 
         # get origin point and center node:
         origin_point = ox.geocode(location) if type(location) is str else location
-        center_node = ox.get_nearest_node(G, origin_point)
+        center_node = ox.distance.nearest_nodes(G, *origin_point)
 
         G = ox.project_graph(G) # move this to the plotting functions?
 
@@ -147,12 +147,14 @@ def increment_edges(route, G, missing_edges):
         for i0, i1 in zip(route[:-1], route[1:]):
             if not G.nodes[i0]['calculated']:
                 accum_traffic += 1
-            try:
-                if G.get_edge_data(i0, i1) != None:
-                    for k in G.get_edge_data(i0, i1):
-                        G.edges[i0, i1, k]['through_traffic'] += accum_traffic
-            except KeyError or TypeError:
-                missing_edges.update((i0, i1))
+            if G.get_edge_data(i0, i1) != None:
+                for k in G.get_edge_data(i0, i1):
+                    G.edges[i0, i1, k]['through_traffic'] += accum_traffic
+            elif G.get_edge_data(i1, i0) != None:
+                for k in G.get_edge_data(i1, i0):
+                    G.edges[i1, i0, k]['through_traffic'] += accum_traffic
+            else:
+                missing_edges.add((i0, i1))
                 # continue
 
             G.nodes[i0]['calculated'] = True
@@ -257,7 +259,7 @@ def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma',
     if type(center_nodes) is not list: 
         center_nodes = [center_nodes]
 
-    if color_by: set_width_and_color(G, color_by, cmap_name=cmap_name, 
+    if color_by: set_width_and_color(G, color_by, cmap_name=palette_name, 
                                      min_intensity_ratio=min_intensity_ratio, 
                                      min_width=min_width, max_width=max_width)
 
@@ -265,8 +267,8 @@ def draw_map(G, center_nodes, color_by='through_traffic', palette_name='magma',
     edge_colors = G.edges(data='color')
     edge_widths = G.edges(data='widths')
 
-    fig, ax = ox.plot_graph(G, edge_color=edge_colors, edge_linewidth=edge_widths, equal_aspect=True,
-                            node_size=0, save=True, fig_height=14, fig_width=16, use_geom=True,
+    fig, ax = ox.plot_graph(G, edge_color=edge_colors, edge_linewidth=edge_widths,
+                            node_size=0,
                             close=False, show=False, bgcolor='k')
 
     for center_node in center_nodes:
@@ -351,7 +353,7 @@ def make_bokeh_map(G, center_nodes, color_by='through_traffic', plot_width=1000,
     df = pd.DataFrame(lines)
     df = df.sort_values('width')
     source = ColumnDataSource(df)
-    p = figure(plot_width=plot_width, plot_height=plot_height, match_aspect=True, 
+    p = figure(width=plot_width, height=plot_height, match_aspect=True, 
                output_backend=output_backend, toolbar_location=toolbar_location,
                x_range=(left, right), y_range=(bottom, top))
     p.axis.visible = False

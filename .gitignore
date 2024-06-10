@@ -9,3 +9,7 @@
 *.pyc
 *.gif
 *.json
+*.dropbox
+*.ipynb
+*.DS_Store
+*.osm
