@@ -10,6 +10,16 @@ import traceback
 # Ensure the motorshed package is importable from the repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+# motorshed/osrm.py calls requests_cache.install_cache(backend='sqlite') at module
+# import time. sqlite3 may not be available in all Python environments, so we patch
+# install_cache to redirect to the memory backend before any motorshed imports happen.
+import requests_cache as _rc
+_orig_install_cache = _rc.install_cache
+def _install_cache_memory(*args, **kwargs):
+    kwargs['backend'] = 'memory'
+    return _orig_install_cache(*args, **kwargs)
+_rc.install_cache = _install_cache_memory
+
 
 def run_job(job_id: str, lat: float, lng: float, radius_km: float,
             direction: str, jobs: dict):
