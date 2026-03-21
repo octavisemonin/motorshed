@@ -56,8 +56,9 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
         for node, data in G.nodes(data=True):
             data["calculated"] = False
 
-        # Find the node closest to the clicked origin point
-        center_node = ox.get_nearest_node(G, (lat, lng))
+        # Find the node closest to the clicked origin point.
+        # ox.nearest_nodes(G, X, Y) takes longitude first, then latitude.
+        center_node = ox.nearest_nodes(G, lng, lat)
 
         # --- Stage 2: OSRM Table API (batch transit times) ---
         update(15, "Querying OSRM for transit times…")
