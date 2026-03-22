@@ -1,1 +1,1 @@
-/api/* https://YOUR_VPS_IP_OR_DOMAIN/api/:splat 200
+/api/* http://65.108.156.188:8000/api/:splat 200
