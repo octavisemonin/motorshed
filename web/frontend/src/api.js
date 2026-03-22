@@ -2,7 +2,9 @@
  * API client for the Motorshed backend.
  */
 
-const BASE = '/api'
+// In dev, Vite proxies /api to localhost:8000.
+// In production, call the VPS backend directly.
+const BASE = import.meta.env.DEV ? '/api' : 'http://65.108.156.188:8000/api'
 
 /**
  * Start a new motorshed computation.
