@@ -21,6 +21,10 @@ import time
 
 import requests as req
 
+# When running inside Docker, temp files must be on a path shared with the host
+# so sibling OSRM containers can mount them. Set OSRM_TMPDIR to a shared path.
+OSRM_TMPDIR = os.environ.get("OSRM_TMPDIR", tempfile.gettempdir())
+
 
 def _find_free_port():
     """Find a free TCP port."""
@@ -122,7 +126,8 @@ class LocalOSRM:
 
     def start(self):
         """Download raw OSM data, run OSRM pipeline, start server."""
-        self._tmpdir = tempfile.mkdtemp(prefix="osrm_")
+        os.makedirs(OSRM_TMPDIR, exist_ok=True)
+        self._tmpdir = tempfile.mkdtemp(prefix="osrm_", dir=OSRM_TMPDIR)
         osm_path = os.path.join(self._tmpdir, "graph.osm")
 
         # Step 1: Download raw OSM data

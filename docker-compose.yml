@@ -40,10 +40,14 @@ services:
     volumes:
       # Mount Docker socket so backend can spawn on-demand OSRM containers
       - /var/run/docker.sock:/var/run/docker.sock
+      # Shared temp dir — sibling OSRM containers mount from the host,
+      # so the backend's temp files must be on a host-visible path.
+      - /tmp/motorshed-osrm:/tmp/motorshed-osrm
     environment:
       # Leave OSRM_HOST empty for on-demand mode.
       # Set to http://osrm:5000 for pre-built mode.
       - OSRM_HOST=${OSRM_HOST:-}
+      - OSRM_TMPDIR=/tmp/motorshed-osrm
     ports:
       - "8000:8000"
 
