@@ -11,3 +11,4 @@ numpy
 requests
 requests-cache
 contexttimer
+scikit-learn
