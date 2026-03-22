@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy motorshed library and install it
 COPY motorshed/ /app/motorshed/
 COPY setup.py /app/
-RUN pip install --no-cache-dir -e .
+COPY readme.md /app/
+RUN pip install --no-cache-dir setuptools && pip install --no-cache-dir -e .
 
 # Copy backend code
 COPY web/backend/ /app/backend/
