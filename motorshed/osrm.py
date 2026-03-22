@@ -102,9 +102,8 @@ def osrm(
         route = r.json()["routes"][0]["legs"][0]["annotation"]["nodes"]
         transit_time = r.json()["routes"][0]["duration"]
 
-    except KeyError:
-        print("No route found for %i" % start_node)
-        missing_nodes.update(start_node)
+    except (KeyError, IndexError):
+        print(f"No route found from ({start}) to ({end})")
         route, transit_time = [], np.NaN
 
     return route, transit_time, r

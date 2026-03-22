@@ -5,8 +5,11 @@ import { ScatterplotLayer } from '@deck.gl/layers'
 import { startCompute, subscribeToJob } from './api'
 import { buildMotorshedLayer } from './MotorshedLayer'
 
-// Free dark map style — no API key required
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json'
+// Map styles — no API key required
+const MAP_STYLES = {
+  dark: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
+  light: 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json',
+}
 
 const INITIAL_VIEW = {
   longitude: -122.42,
@@ -23,6 +26,7 @@ export default function App() {
   const [direction, setDirection] = useState('to')
   const [boundaryMode, setBoundaryMode] = useState('radius') // 'radius' or 'place'
   const [placeName, setPlaceName] = useState('')
+  const [theme, setTheme] = useState('dark') // 'dark' or 'light'
   const [jobState, setJobState] = useState(null)   // { status, progress, message, error }
   const [geojson, setGeojson] = useState(null)
 
@@ -82,7 +86,7 @@ export default function App() {
 
   // Motorshed road-traffic layer
   if (geojson) {
-    layers.push(buildMotorshedLayer(geojson, direction))
+    layers.push(buildMotorshedLayer(geojson, direction, theme))
   }
 
   // Origin marker
@@ -94,8 +98,8 @@ export default function App() {
         getPosition: d => [d.lng, d.lat],
         getRadius: 60,
         radiusUnits: 'meters',
-        getFillColor: [255, 255, 255, 220],
-        getLineColor: [224, 96, 58, 255],
+        getFillColor: theme === 'dark' ? [255, 255, 255, 220] : [30, 30, 30, 220],
+        getLineColor: theme === 'dark' ? [224, 96, 58, 255] : [20, 60, 150, 255],
         stroked: true,
         lineWidthMinPixels: 3,
         pickable: false,
@@ -107,7 +111,10 @@ export default function App() {
   const featureCount = geojson?.features?.length ?? 0
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    <div
+      className={theme === 'light' ? 'app-root light-theme' : 'app-root'}
+      style={{ width: '100vw', height: '100vh', position: 'relative' }}
+    >
       <DeckGL
         viewState={viewState}
         onViewStateChange={({ viewState: vs }) => setViewState(vs)}
@@ -116,7 +123,7 @@ export default function App() {
         onClick={handleMapClick}
         getCursor={({ isDragging }) => isDragging ? 'grabbing' : 'crosshair'}
       >
-        <Map mapStyle={MAP_STYLE} />
+        <Map mapStyle={MAP_STYLES[theme]} />
       </DeckGL>
 
       {/* ---- Sidebar ---- */}
@@ -182,6 +189,24 @@ export default function App() {
                 {d === 'to' ? 'To origin' : 'From origin'}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="field">
+          <label>Theme</label>
+          <div className="toggle-group">
+            <button
+              className={theme === 'dark' ? 'active' : ''}
+              onClick={() => setTheme('dark')}
+            >
+              Dark
+            </button>
+            <button
+              className={theme === 'light' ? 'active' : ''}
+              onClick={() => setTheme('light')}
+            >
+              Light
+            </button>
           </div>
         </div>
 

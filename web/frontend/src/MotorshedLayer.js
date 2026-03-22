@@ -1,6 +1,6 @@
 /**
  * deck.gl PathLayer for the motorshed road-traffic visualization.
- * Uses the magma colormap (matching the CLI output) to color roads by traffic.
+ * Supports dark mode (magma colormap) and light mode (white-to-blue).
  */
 
 import { PathLayer } from '@deck.gl/layers'
@@ -21,29 +21,40 @@ const MAGMA = [
 ]
 
 /**
- * Map a normalised traffic value [0,1] to an RGBA color using the magma colormap.
- * @param {number} t  normalised traffic in [0, 1]
+ * Light mode colormap: white → light blue → dark blue → black
+ */
+const LIGHT = [
+  [0.000, 220, 220, 230],
+  [0.250, 140, 170, 210],
+  [0.500,  60, 100, 180],
+  [0.750,  20,  50, 130],
+  [1.000,   5,  10,  40],
+]
+
+/**
+ * Interpolate through a colormap.
+ * @param {Array} cmap  Array of [t, r, g, b] control points
+ * @param {number} t  normalised value in [0, 1]
  * @returns {[number, number, number, number]}
  */
-function magmaColor(t) {
+function interpolateColor(cmap, t) {
   const v = Math.max(0, Math.min(1, t))
 
-  // Find the two surrounding control points
-  for (let i = 0; i < MAGMA.length - 1; i++) {
-    const [t0, r0, g0, b0] = MAGMA[i]
-    const [t1, r1, g1, b1] = MAGMA[i + 1]
+  for (let i = 0; i < cmap.length - 1; i++) {
+    const [t0, r0, g0, b0] = cmap[i]
+    const [t1, r1, g1, b1] = cmap[i + 1]
     if (v <= t1) {
       const f = (v - t0) / (t1 - t0)
-      const alpha = 255
       return [
         Math.round(r0 + f * (r1 - r0)),
         Math.round(g0 + f * (g1 - g0)),
         Math.round(b0 + f * (b1 - b0)),
-        alpha,
+        255,
       ]
     }
   }
-  return [252, 253, 191, 255]
+  const last = cmap[cmap.length - 1]
+  return [last[1], last[2], last[3], 255]
 }
 
 /**
@@ -51,9 +62,12 @@ function magmaColor(t) {
  *
  * @param {object} geojson  GeoJSON FeatureCollection with properties.traffic and .through_traffic
  * @param {string} direction  'to' or 'from' (for layer ID uniqueness)
+ * @param {string} theme  'dark' or 'light'
  * @returns {PathLayer}
  */
-export function buildMotorshedLayer(geojson, direction) {
+export function buildMotorshedLayer(geojson, direction, theme = 'dark') {
+  const cmap = theme === 'light' ? LIGHT : MAGMA
+
   return new PathLayer({
     id: `motorshed-paths-${direction}`,
     data: geojson.features,
@@ -61,9 +75,8 @@ export function buildMotorshedLayer(geojson, direction) {
     // GeoJSON coordinates are already [lng, lat]
     getPath: d => d.geometry.coordinates,
 
-    // Color by normalised traffic through the magma colormap.
-    // Low-traffic roads fade to near-black; high-traffic roads glow yellow.
-    getColor: d => magmaColor(d.properties.traffic),
+    // Color by normalised traffic through the selected colormap
+    getColor: d => interpolateColor(cmap, d.properties.traffic),
 
     // Width scales with normalized traffic: thin for low, thick for high
     getWidth: d => 0.3 + d.properties.traffic * 2.5,
@@ -76,9 +89,9 @@ export function buildMotorshedLayer(geojson, direction) {
     jointRounded: true,
     capRounded: true,
 
-    // Re-render when data changes
+    // Re-render when data or theme changes
     updateTriggers: {
-      getColor: [direction],
+      getColor: [direction, theme],
     },
   })
 }

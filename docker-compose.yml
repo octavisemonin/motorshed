@@ -1,10 +1,25 @@
 version: "3.8"
 
+# Two deployment modes:
+#
+# 1. On-demand OSRM (default, no pre-processing needed):
+#      docker compose up -d backend frontend
+#    The backend spawns temporary OSRM containers per-request.
+#    Requires: Docker socket mounted into backend container.
+#
+# 2. Pre-built OSRM (faster routing, needs pre-processed data):
+#      docker compose up -d
+#    Uses the 'osrm' service with pre-processed state/region data.
+#    Run ./web/osrm-setup.sh first to prepare the data.
+
 services:
+  # Optional: pre-built OSRM server for a whole region.
+  # Only needed if you have pre-processed OSRM data.
   osrm:
     image: osrm/osrm-backend
     container_name: motorshed-osrm
     restart: unless-stopped
+    profiles: ["prebuilt"]
     volumes:
       - ./web/osrm-data:/data
     command: osrm-routed --algorithm mld /data/california-latest.osrm
@@ -22,11 +37,13 @@ services:
       dockerfile: web/backend/Dockerfile
     container_name: motorshed-backend
     restart: unless-stopped
+    volumes:
+      # Mount Docker socket so backend can spawn on-demand OSRM containers
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - OSRM_HOST=http://osrm:5000
-    depends_on:
-      osrm:
-        condition: service_healthy
+      # Leave OSRM_HOST empty for on-demand mode.
+      # Set to http://osrm:5000 for pre-built mode.
+      - OSRM_HOST=${OSRM_HOST:-}
     ports:
       - "8000:8000"
 

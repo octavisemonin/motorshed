@@ -207,3 +207,89 @@ input[type='range'] {
 .stats-panel strong {
   color: #ccc;
 }
+
+/* ---- Light theme overrides ---- */
+.light-theme .sidebar {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.15);
+}
+
+.light-theme .sidebar h1 {
+  color: #1a1a2e;
+}
+
+.light-theme .sidebar .tagline {
+  color: #888;
+}
+
+.light-theme .field label {
+  color: #666;
+}
+
+.light-theme .field label span {
+  color: #1a5090;
+}
+
+.light-theme .toggle-group button {
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #666;
+}
+
+.light-theme .toggle-group button.active {
+  background: #1a5090;
+  border-color: #1a5090;
+  color: #fff;
+}
+
+.light-theme .place-input {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
+  color: #1a1a2e;
+}
+
+.light-theme .place-input:focus {
+  border-color: #1a5090;
+}
+
+.light-theme .place-input::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.light-theme input[type='range'] {
+  accent-color: #1a5090;
+}
+
+.light-theme .compute-btn {
+  background: linear-gradient(135deg, #0d3060, #1a5090);
+}
+
+.light-theme .hint {
+  color: #999;
+}
+
+.light-theme .stats-panel {
+  border-top-color: rgba(0, 0, 0, 0.08);
+  color: #888;
+}
+
+.light-theme .stats-panel strong {
+  color: #333;
+}
+
+.light-theme .progress-overlay {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .progress-overlay .progress-msg {
+  color: #555;
+}
+
+.light-theme .progress-bar-track {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.light-theme .progress-bar-fill {
+  background: linear-gradient(90deg, #0d3060, #1a5090, #4090d0);
+}
