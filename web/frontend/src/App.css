@@ -293,3 +293,94 @@ input[type='range'] {
 .light-theme .progress-bar-fill {
   background: linear-gradient(90deg, #0d3060, #1a5090, #4090d0);
 }
+
+/* ---- Mobile bottom sheet ---- */
+.sidebar-content.hidden {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebar.mobile {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    padding: 0 16px 16px;
+    max-height: 85vh;
+    overflow-y: auto;
+    transition: max-height 0.3s ease;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar.mobile:not(.open) {
+    max-height: 80px;
+    overflow: hidden;
+  }
+
+  .sheet-handle {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 6px;
+    cursor: pointer;
+  }
+
+  .sheet-handle-bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .light-theme .sheet-handle-bar {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .sheet-collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0 8px;
+    cursor: pointer;
+  }
+
+  .sheet-collapsed-left {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .sheet-collapsed-left strong {
+    font-size: 1rem;
+    color: #fff;
+  }
+
+  .light-theme .sheet-collapsed-left strong {
+    color: #1a1a2e;
+  }
+
+  .sheet-origin-hint {
+    font-size: 0.7rem;
+    color: #888;
+    margin-top: 2px;
+  }
+
+  .compute-btn-mini {
+    width: auto;
+    padding: 8px 16px;
+    margin-top: 0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Move progress overlay above the bottom sheet */
+  .progress-overlay {
+    bottom: 96px;
+    min-width: 280px;
+    max-width: calc(100vw - 32px);
+  }
+}

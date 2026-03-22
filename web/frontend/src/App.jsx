@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import DeckGL from '@deck.gl/react'
 import { Map } from 'react-map-gl/maplibre'
 import { ScatterplotLayer } from '@deck.gl/layers'
@@ -30,7 +30,17 @@ export default function App() {
   const [jobState, setJobState] = useState(null)   // { status, progress, message, error }
   const [geojson, setGeojson] = useState(null)
 
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const cancelRef = useRef(null)
+
+  // Detect mobile
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const handleMapClick = useCallback((info) => {
     if (!info.coordinate) return
@@ -126,111 +136,149 @@ export default function App() {
         <Map mapStyle={MAP_STYLES[theme]} />
       </DeckGL>
 
-      {/* ---- Sidebar ---- */}
-      <div className="sidebar">
-        <h1>Motorshed</h1>
-        <p className="tagline">Traffic routing visualizer</p>
-
-        <div className="field">
-          <label>Boundary</label>
-          <div className="toggle-group">
-            <button
-              className={boundaryMode === 'radius' ? 'active' : ''}
-              onClick={() => setBoundaryMode('radius')}
-            >
-              Radius
-            </button>
-            <button
-              className={boundaryMode === 'place' ? 'active' : ''}
-              onClick={() => setBoundaryMode('place')}
-            >
-              City / Place
-            </button>
-          </div>
-        </div>
-
-        {boundaryMode === 'radius' ? (
-          <div className="field">
-            <label>
-              Radius
-              <span>{radiusKm} km</span>
-            </label>
-            <input
-              type="range"
-              min={1}
-              max={20}
-              step={0.5}
-              value={radiusKm}
-              onChange={e => setRadiusKm(Number(e.target.value))}
-            />
-          </div>
-        ) : (
-          <div className="field">
-            <label>Place name</label>
-            <input
-              type="text"
-              className="place-input"
-              placeholder="e.g. San Francisco, CA"
-              value={placeName}
-              onChange={e => setPlaceName(e.target.value)}
-            />
+      {/* ---- Panel (sidebar on desktop, bottom sheet on mobile) ---- */}
+      <div className={`sidebar ${isMobile ? 'mobile' : ''} ${panelOpen ? 'open' : ''}`}>
+        {/* Mobile drag handle */}
+        {isMobile && (
+          <div className="sheet-handle" onClick={() => setPanelOpen(o => !o)}>
+            <div className="sheet-handle-bar" />
           </div>
         )}
 
-        <div className="field">
-          <label>Direction</label>
-          <div className="toggle-group">
-            {['to', 'from'].map(d => (
+        {/* Collapsed mobile header — always visible */}
+        {isMobile && !panelOpen && (
+          <div className="sheet-collapsed" onClick={() => setPanelOpen(true)}>
+            <div className="sheet-collapsed-left">
+              <strong>Motorshed</strong>
+              <span className="sheet-origin-hint">
+                {origin
+                  ? `${origin.lat.toFixed(3)}, ${origin.lng.toFixed(3)}`
+                  : 'Tap map to set origin'}
+              </span>
+            </div>
+            <button
+              className="compute-btn compute-btn-mini"
+              onClick={e => { e.stopPropagation(); handleCompute() }}
+              disabled={!origin || isComputing}
+            >
+              {isComputing ? 'Computing…' : 'Compute'}
+            </button>
+          </div>
+        )}
+
+        {/* Full controls — always visible on desktop, only when expanded on mobile */}
+        <div className={`sidebar-content ${isMobile && !panelOpen ? 'hidden' : ''}`}>
+          {!isMobile && (
+            <>
+              <h1>Motorshed</h1>
+              <p className="tagline">Traffic routing visualizer</p>
+            </>
+          )}
+          {isMobile && (
+            <h1 style={{ marginBottom: 12 }}>Motorshed</h1>
+          )}
+
+          <div className="field">
+            <label>Boundary</label>
+            <div className="toggle-group">
               <button
-                key={d}
-                className={direction === d ? 'active' : ''}
-                onClick={() => setDirection(d)}
+                className={boundaryMode === 'radius' ? 'active' : ''}
+                onClick={() => setBoundaryMode('radius')}
               >
-                {d === 'to' ? 'To origin' : 'From origin'}
+                Radius
               </button>
-            ))}
+              <button
+                className={boundaryMode === 'place' ? 'active' : ''}
+                onClick={() => setBoundaryMode('place')}
+              >
+                City / Place
+              </button>
+            </div>
           </div>
+
+          {boundaryMode === 'radius' ? (
+            <div className="field">
+              <label>
+                Radius
+                <span>{radiusKm} km</span>
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                step={0.5}
+                value={radiusKm}
+                onChange={e => setRadiusKm(Number(e.target.value))}
+              />
+            </div>
+          ) : (
+            <div className="field">
+              <label>Place name</label>
+              <input
+                type="text"
+                className="place-input"
+                placeholder="e.g. San Francisco, CA"
+                value={placeName}
+                onChange={e => setPlaceName(e.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="field">
+            <label>Direction</label>
+            <div className="toggle-group">
+              {['to', 'from'].map(d => (
+                <button
+                  key={d}
+                  className={direction === d ? 'active' : ''}
+                  onClick={() => setDirection(d)}
+                >
+                  {d === 'to' ? 'To origin' : 'From origin'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Theme</label>
+            <div className="toggle-group">
+              <button
+                className={theme === 'dark' ? 'active' : ''}
+                onClick={() => setTheme('dark')}
+              >
+                Dark
+              </button>
+              <button
+                className={theme === 'light' ? 'active' : ''}
+                onClick={() => setTheme('light')}
+              >
+                Light
+              </button>
+            </div>
+          </div>
+
+          <button
+            className="compute-btn"
+            onClick={handleCompute}
+            disabled={!origin || isComputing}
+          >
+            {isComputing ? 'Computing…' : 'Compute Motorshed'}
+          </button>
+
+          <p className="hint">
+            {origin
+              ? `Origin: ${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`
+              : 'Click anywhere on the map to set origin'}
+          </p>
+
+          {featureCount > 0 && (
+            <div className="stats-panel">
+              <strong>{featureCount.toLocaleString()}</strong> road segments rendered
+              <br />
+              Direction: <strong>{direction === 'to' ? 'routes to origin' : 'routes from origin'}</strong>
+            </div>
+          )}
         </div>
-
-        <div className="field">
-          <label>Theme</label>
-          <div className="toggle-group">
-            <button
-              className={theme === 'dark' ? 'active' : ''}
-              onClick={() => setTheme('dark')}
-            >
-              Dark
-            </button>
-            <button
-              className={theme === 'light' ? 'active' : ''}
-              onClick={() => setTheme('light')}
-            >
-              Light
-            </button>
-          </div>
-        </div>
-
-        <button
-          className="compute-btn"
-          onClick={handleCompute}
-          disabled={!origin || isComputing}
-        >
-          {isComputing ? 'Computing…' : 'Compute Motorshed'}
-        </button>
-
-        <p className="hint">
-          {origin
-            ? `Origin: ${origin.lat.toFixed(4)}, ${origin.lng.toFixed(4)}`
-            : 'Click anywhere on the map to set origin'}
-        </p>
-
-        {featureCount > 0 && (
-          <div className="stats-panel">
-            <strong>{featureCount.toLocaleString()}</strong> road segments rendered
-            <br />
-            Direction: <strong>{direction === 'to' ? 'routes to origin' : 'routes from origin'}</strong>
-          </div>
-        )}
       </div>
 
       {/* ---- Progress overlay ---- */}
