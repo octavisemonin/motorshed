@@ -25,6 +25,10 @@ import requests as req
 # so sibling OSRM containers can mount them. Set OSRM_TMPDIR to a shared path.
 OSRM_TMPDIR = os.environ.get("OSRM_TMPDIR", tempfile.gettempdir())
 
+# When running inside a Docker container, "localhost" refers to the container
+# itself, not the host. Use DOCKER_HOST_ADDR to reach ports on the host.
+DOCKER_HOST_ADDR = os.environ.get("DOCKER_HOST_ADDR", "localhost")
+
 
 def _find_free_port():
     """Find a free TCP port."""
@@ -170,7 +174,7 @@ class LocalOSRM:
         # Step 5: Start OSRM server
         self._port = _find_free_port()
         self._container_name = f"osrm-ondemand-{self._port}"
-        self.host = f"http://localhost:{self._port}"
+        self.host = f"http://{DOCKER_HOST_ADDR}:{self._port}"
 
         self.on_status("Starting local routing server…")
         subprocess.run(

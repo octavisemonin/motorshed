@@ -48,6 +48,9 @@ services:
       # Set to http://osrm:5000 for pre-built mode.
       - OSRM_HOST=${OSRM_HOST:-}
       - OSRM_TMPDIR=/tmp/motorshed-osrm
+      - DOCKER_HOST_ADDR=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
 
