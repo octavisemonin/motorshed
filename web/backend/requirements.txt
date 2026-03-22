@@ -12,3 +12,6 @@ requests
 requests-cache
 contexttimer
 scikit-learn
+tqdm
+matplotlib
+imageio
