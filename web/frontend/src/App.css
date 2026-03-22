@@ -96,6 +96,26 @@ input[type='range'] {
   font-weight: 600;
 }
 
+.place-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.place-input:focus {
+  border-color: #e0603a;
+}
+
+.place-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
 .compute-btn {
   width: 100%;
   padding: 10px;

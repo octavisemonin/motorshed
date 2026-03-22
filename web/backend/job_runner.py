@@ -1,21 +1,28 @@
 """
 Background job runner: wraps the existing motorshed Python algorithm
 and converts results to GeoJSON for the frontend.
+
+Uses the brute_force algorithm which queries OSRM for an actual route
+from every node to the center, producing complete coverage with no gaps.
 """
 
 import sys
 import os
 import traceback
+import concurrent.futures
 
 # Ensure the motorshed package is importable from the repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def run_job(job_id: str, lat: float, lng: float, radius_km: float,
-            direction: str, jobs: dict):
+            direction: str, place: str | None, jobs: dict):
     """
     Run the motorshed algorithm for a given origin (lat, lng) and
     update the shared `jobs` dict with progress and results.
+
+    If `place` is provided (e.g. "San Francisco, CA"), the road network
+    is fetched by city boundary instead of radius.
     """
     def update(progress: int, message: str, status: str = "running"):
         jobs[job_id]["progress"] = progress
@@ -24,62 +31,126 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
 
     try:
         import osmnx as ox
-        from motorshed import osrm
-        from motorshed.algos import gen2
+        from motorshed import osrm as osrm_module
 
-        radius_m = int(radius_km * 1000)
         towards_origin = (direction != "from")
 
         # --- Stage 1: Fetch road network from OSM ---
-        update(5, "Fetching road network from OpenStreetMap…")
-        G = ox.graph_from_point(
-            (lat, lng),
-            dist=radius_m,
-            network_type="drive",
-            simplify=False,
-        )
+        if place:
+            update(5, f"Fetching road network for {place}…")
+            G = ox.graph_from_place(
+                place,
+                network_type="drive",
+                simplify=False,
+            )
+        else:
+            radius_m = int(radius_km * 1000)
+            update(5, "Fetching road network from OpenStreetMap…")
+            G = ox.graph_from_point(
+                (lat, lng),
+                dist=radius_m,
+                network_type="drive",
+                simplify=False,
+            )
+
+        # Find nearest node BEFORE projecting (x/y are lng/lat here)
+        center_node = ox.nearest_nodes(G, lng, lat)
+
+        # Add lat/lon attributes that the OSRM module expects,
+        # using the unprojected x/y (which ARE lng/lat)
+        for node, data in G.nodes(data=True):
+            data["lon"] = data["x"]
+            data["lat"] = data["y"]
+
+        # Now project for the algorithm
         G = ox.project_graph(G)
 
-        # Initialize required graph attributes (mirrors overpass.get_map)
+        # Initialize required graph attributes
         for u, v, k, data in G.edges(data=True, keys=True):
             data["through_traffic"] = 1
         for node, data in G.nodes(data=True):
             data["calculated"] = False
 
-        # Find the node closest to the clicked origin point
-        center_node = ox.get_nearest_node(G, (lat, lng))
+        # --- Stage 2: Route every node via OSRM (brute force) ---
+        update(10, "Routing all nodes via OSRM…")
+        nodes = list(G.nodes())
+        total_nodes = len(nodes)
+        missing_edges = set()
+        n_requests = 0
 
-        # --- Stage 2: OSRM Table API (batch transit times) ---
-        update(15, "Querying OSRM for transit times…")
-        osrm.get_transit_times(G, center_node, towards_origin=towards_origin)
+        N_WORKERS = 8
 
-        # --- Stage 3: Build routing dataframes ---
-        update(30, "Building routing dataframes…")
-        Gn, Ge = gen2.create_initial_dataframes(G, towards_origin=towards_origin)
+        def route_node(origin_node):
+            """Route a single node to/from center via OSRM."""
+            if towards_origin:
+                route, transit_time, r = osrm_module.osrm(
+                    G, origin_node, center_node, mode="driving"
+                )
+            else:
+                route, transit_time, r = osrm_module.osrm(
+                    G, center_node, origin_node, mode="driving"
+                )
+            # Filter route to only include nodes in our graph
+            route = [n for n in route if n in G]
+            return route
 
-        # --- Stage 4: Initial heuristic routing ---
-        update(40, "Running initial heuristic routing…")
-        Ge2, Gn2 = gen2.initial_routing(Ge.copy(), Gn.copy())
+        # Process nodes in parallel batches
+        batch_size = N_WORKERS * 4
+        for batch_start in range(0, total_nodes, batch_size):
+            batch_end = min(batch_start + batch_size, total_nodes)
+            batch_nodes = [
+                n for n in nodes[batch_start:batch_end]
+                if not G.nodes[n]["calculated"]
+            ]
 
-        # --- Stage 5: Follow-up heuristic routing ---
-        update(52, "Running follow-up heuristic routing…")
-        Ge3, Gn3 = gen2.followup_heuristic_routing(Ge2.copy(), Gn2.copy())
+            # Update progress (10% to 85% range for routing)
+            progress = 10 + int(75 * batch_start / total_nodes)
+            update(progress,
+                   f"Routing nodes {batch_start}/{total_nodes}…")
 
-        # --- Stage 6: OSRM routing API for remaining ambiguous edges ---
-        update(65, "Resolving remaining edges via OSRM routing API…")
-        Ge4 = gen2.followup_osrm_routing_parallel(
-            G, Ge3, Gn3, center_node, towards_origin=towards_origin
-        )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=N_WORKERS) as executor:
+                future_to_node = {
+                    executor.submit(route_node, n): n
+                    for n in batch_nodes
+                }
 
-        # --- Stage 7: Propagate traffic ---
-        update(80, "Propagating traffic through network…")
-        Gge = gen2.propagate_edges(Ge4)
+                for future in concurrent.futures.as_completed(future_to_node):
+                    origin_node = future_to_node[future]
+                    try:
+                        route = future.result()
+                        # Increment traffic on every edge along the route
+                        if len(route) > 0:
+                            accum_traffic = 1
+                            for i0, i1 in zip(route[:-1], route[1:]):
+                                if not G.nodes[i0]["calculated"]:
+                                    accum_traffic += 1
+                                try:
+                                    G.edges[i0, i1, 0]["through_traffic"] += accum_traffic
+                                except KeyError:
+                                    missing_edges.add((i0, i1))
+                            G.nodes[origin_node]["calculated"] = True
+                        n_requests += 1
+                    except Exception as exc:
+                        print(f"Error routing node {origin_node}: {exc}")
 
-        # --- Stage 8: Build GeoJSON ---
-        update(93, "Building GeoJSON output…")
-        geojson = edges_to_geojson(Gge, Gn, direction)
+            # Update progress after each batch completes
+            routed = min(batch_end, total_nodes)
+            progress = 10 + int(75 * routed / total_nodes)
+            pct = int(100 * routed / total_nodes)
+            update(progress,
+                   f"Routing nodes… {routed}/{total_nodes} ({pct}%)")
+
+            # Send partial GeoJSON snapshot every ~10% of progress
+            if total_nodes > 0 and (routed % max(1, total_nodes // 10) < batch_size
+                                    or routed >= total_nodes):
+                jobs[job_id]["partial"] = graph_to_geojson(G, direction)
+
+        # --- Stage 3: Final GeoJSON ---
+        update(90, "Finalizing…")
+        geojson = graph_to_geojson(G, direction)
 
         jobs[job_id]["result"] = geojson
+        jobs[job_id].pop("partial", None)
         update(100, "Done!", status="done")
 
     except Exception as exc:
@@ -89,35 +160,48 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
         traceback.print_exc()
 
 
-def edges_to_geojson(Gge, Gn, direction: str) -> dict:
+def graph_to_geojson(G, direction: str) -> dict:
     """
-    Convert the propagated edge GeoDataFrame to a GeoJSON FeatureCollection.
-    Each feature is a road segment with normalized traffic in [0, 1].
+    Convert graph G directly to a GeoJSON FeatureCollection.
+    Every edge is included — through_traffic is already accumulated on the graph.
+    Uses log-scale normalization so low-traffic roads are visually distinct from
+    high-traffic ones.
     """
     import math
 
-    # Normalise traffic values for color mapping
-    max_traffic = float(Gge.through_traffic.max() or 1)
+    # Match the original renderer's normalization: log2(traffic + 2)
+    # The +2 prevents very small values from compressing the scale
+    min_intensity_ratio = 1.1 / 255  # minimum visible intensity
 
+    # First pass: compute max intensity for normalization
+    max_intensity = 0.0
+    for _, _, data in G.edges(data=True):
+        intensity = math.log2(float(data["through_traffic"]) + 2.0)
+        if intensity > max_intensity:
+            max_intensity = intensity
+    if max_intensity == 0:
+        max_intensity = 1.0
+
+    seen = set()
     features = []
-    for _, row in Gge.iterrows():
-        # Skip ignored edges (footways, service roads) and zero-traffic edges
-        if row.get("ignore", False):
-            continue
-        traffic = float(row.through_traffic)
-        if traffic <= 0:
-            continue
 
-        # Look up WGS84 coordinates for start and end nodes
-        try:
-            u_node = Gn.loc[int(row.u)]
-            v_node = Gn.loc[int(row.v)]
-        except KeyError:
+    for u, v, data in G.edges(data=True):
+        if (u, v) in seen:
             continue
+        seen.add((u, v))
+
+        raw_traffic = float(data.get("through_traffic", 0))
+        # Normalized intensity matching render_mpl.py
+        intensity = math.log2(raw_traffic + 2.0) / max_intensity
+        # Apply minimum intensity ratio
+        intensity = intensity * (1.0 - min_intensity_ratio) + min_intensity_ratio
+
+        u_data = G.nodes[u]
+        v_data = G.nodes[v]
 
         coords = [
-            [float(u_node.lon), float(u_node.lat)],
-            [float(v_node.lon), float(v_node.lat)],
+            [float(u_data["lon"]), float(u_data["lat"])],
+            [float(v_data["lon"]), float(v_data["lat"])],
         ]
 
         features.append({
@@ -127,12 +211,15 @@ def edges_to_geojson(Gge, Gn, direction: str) -> dict:
                 "coordinates": coords,
             },
             "properties": {
-                "traffic": traffic / max_traffic,       # normalised 0-1
-                "through_traffic": traffic,              # raw count
-                "highway": str(row.highway),
+                "traffic": intensity,
+                "through_traffic": raw_traffic,
+                "highway": str(data.get("highway", "")),
                 "direction": direction,
             },
         })
+
+    # Sort by traffic so bright/thick edges render on top of dim ones
+    features.sort(key=lambda f: f["properties"]["through_traffic"])
 
     return {
         "type": "FeatureCollection",

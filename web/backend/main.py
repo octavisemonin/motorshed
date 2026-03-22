@@ -40,8 +40,9 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 class ComputeRequest(BaseModel):
     lat: float = Field(..., description="Origin latitude")
     lng: float = Field(..., description="Origin longitude")
-    radius_km: float = Field(3.0, ge=0.5, le=15.0, description="Search radius in km")
+    radius_km: float = Field(3.0, ge=0.5, le=20.0, description="Search radius in km")
     direction: str = Field("to", description="'to', 'from'")
+    place: str | None = Field(None, description="City/place name (e.g. 'San Francisco, CA'). If set, radius is ignored.")
 
 
 @app.post("/api/compute")
@@ -57,6 +58,7 @@ async def compute(req: ComputeRequest):
     }
 
     loop = asyncio.get_event_loop()
+    jobs[job_id]["place"] = req.place
     loop.run_in_executor(
         _executor,
         job_runner.run_job,
@@ -65,6 +67,7 @@ async def compute(req: ComputeRequest):
         req.lng,
         req.radius_km,
         req.direction,
+        req.place,
         jobs,
     )
 
@@ -117,6 +120,10 @@ async def stream(job_id: str):
             }
 
             finished = job.get("status") in ("done", "error")
+
+            # Include partial results during computation
+            if not finished and "partial" in job:
+                payload["partial"] = job.pop("partial")
 
             if finished and job.get("status") == "done":
                 payload["result"] = job["result"]

@@ -34,11 +34,12 @@ function magmaColor(t) {
     const [t1, r1, g1, b1] = MAGMA[i + 1]
     if (v <= t1) {
       const f = (v - t0) / (t1 - t0)
+      const alpha = 255
       return [
         Math.round(r0 + f * (r1 - r0)),
         Math.round(g0 + f * (g1 - g0)),
         Math.round(b0 + f * (b1 - b0)),
-        255,
+        alpha,
       ]
     }
   }
@@ -64,12 +65,12 @@ export function buildMotorshedLayer(geojson, direction) {
     // Low-traffic roads fade to near-black; high-traffic roads glow yellow.
     getColor: d => magmaColor(d.properties.traffic),
 
-    // Width scales logarithmically with raw through_traffic
-    getWidth: d => Math.log1p(d.properties.through_traffic),
+    // Width scales with normalized traffic: thin for low, thick for high
+    getWidth: d => 0.3 + d.properties.traffic * 2.5,
     widthUnits: 'pixels',
-    widthMinPixels: 0.4,
-    widthMaxPixels: 12,
-    widthScale: 1.2,
+    widthMinPixels: 0.3,
+    widthMaxPixels: 3.5,
+    widthScale: 1,
 
     pickable: false,
     jointRounded: true,

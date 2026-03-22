@@ -8,16 +8,13 @@ const BASE = '/api'
  * Start a new motorshed computation.
  * @returns {Promise<string>} job_id
  */
-export async function startCompute({ lat, lng, radiusKm, direction }) {
+export async function startCompute({ lat, lng, radiusKm, direction, place }) {
+  const body = { lat, lng, radius_km: radiusKm, direction }
+  if (place) body.place = place
   const res = await fetch(`${BASE}/compute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      lat,
-      lng,
-      radius_km: radiusKm,
-      direction,
-    }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`Failed to start job: ${res.status}`)
   const { job_id } = await res.json()
@@ -33,7 +30,7 @@ export async function startCompute({ lat, lng, radiusKm, direction }) {
  * @param {function} onError   called with error message string
  * @returns {function} cleanup – call to close the SSE connection early
  */
-export function subscribeToJob(jobId, { onUpdate, onResult, onError }) {
+export function subscribeToJob(jobId, { onUpdate, onResult, onPartial, onError }) {
   const es = new EventSource(`${BASE}/stream/${jobId}`)
 
   es.onmessage = (event) => {
@@ -45,6 +42,11 @@ export function subscribeToJob(jobId, { onUpdate, onResult, onError }) {
     }
 
     onUpdate?.({ status: data.status, progress: data.progress, message: data.message })
+
+    // Render partial results as they arrive during computation
+    if (data.partial) {
+      onPartial?.(data.partial)
+    }
 
     if (data.status === 'done') {
       es.close()

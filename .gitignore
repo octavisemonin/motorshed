@@ -11,3 +11,6 @@
 *.json
 
 /Motorshed.egg-info/
+node_modules/
+.DS_Store
+web/osrm-data/

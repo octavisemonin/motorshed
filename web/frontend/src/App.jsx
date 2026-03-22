@@ -6,7 +6,7 @@ import { startCompute, subscribeToJob } from './api'
 import { buildMotorshedLayer } from './MotorshedLayer'
 
 // Free dark map style — no API key required
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json'
 
 const INITIAL_VIEW = {
   longitude: -122.42,
@@ -21,6 +21,8 @@ export default function App() {
   const [origin, setOrigin] = useState(null)       // { lat, lng }
   const [radiusKm, setRadiusKm] = useState(3)
   const [direction, setDirection] = useState('to')
+  const [boundaryMode, setBoundaryMode] = useState('radius') // 'radius' or 'place'
+  const [placeName, setPlaceName] = useState('')
   const [jobState, setJobState] = useState(null)   // { status, progress, message, error }
   const [geojson, setGeojson] = useState(null)
 
@@ -50,6 +52,7 @@ export default function App() {
         lng: origin.lng,
         radiusKm,
         direction,
+        place: boundaryMode === 'place' && placeName.trim() ? placeName.trim() : null,
       })
     } catch (err) {
       setJobState({ status: 'error', progress: 0, message: '', error: err.message })
@@ -60,6 +63,9 @@ export default function App() {
       onUpdate: ({ status, progress, message }) => {
         setJobState({ status, progress, message, error: null })
       },
+      onPartial: (partial) => {
+        setGeojson(partial)
+      },
       onResult: (result) => {
         setGeojson(result)
         setJobState(prev => ({ ...prev, status: 'done' }))
@@ -69,7 +75,7 @@ export default function App() {
       },
     })
     cancelRef.current = cancel
-  }, [origin, radiusKm, direction])
+  }, [origin, radiusKm, direction, boundaryMode, placeName])
 
   // Build deck.gl layers
   const layers = []
@@ -119,19 +125,50 @@ export default function App() {
         <p className="tagline">Traffic routing visualizer</p>
 
         <div className="field">
-          <label>
-            Radius
-            <span>{radiusKm} km</span>
-          </label>
-          <input
-            type="range"
-            min={1}
-            max={10}
-            step={0.5}
-            value={radiusKm}
-            onChange={e => setRadiusKm(Number(e.target.value))}
-          />
+          <label>Boundary</label>
+          <div className="toggle-group">
+            <button
+              className={boundaryMode === 'radius' ? 'active' : ''}
+              onClick={() => setBoundaryMode('radius')}
+            >
+              Radius
+            </button>
+            <button
+              className={boundaryMode === 'place' ? 'active' : ''}
+              onClick={() => setBoundaryMode('place')}
+            >
+              City / Place
+            </button>
+          </div>
         </div>
+
+        {boundaryMode === 'radius' ? (
+          <div className="field">
+            <label>
+              Radius
+              <span>{radiusKm} km</span>
+            </label>
+            <input
+              type="range"
+              min={1}
+              max={20}
+              step={0.5}
+              value={radiusKm}
+              onChange={e => setRadiusKm(Number(e.target.value))}
+            />
+          </div>
+        ) : (
+          <div className="field">
+            <label>Place name</label>
+            <input
+              type="text"
+              className="place-input"
+              placeholder="e.g. San Francisco, CA"
+              value={placeName}
+              onChange={e => setPlaceName(e.target.value)}
+            />
+          </div>
+        )}
 
         <div className="field">
           <label>Direction</label>
