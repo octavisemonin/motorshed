@@ -7,6 +7,9 @@ from contexttimer import Timer
 
 from motorshed.util import cache_dir
 
+# OSRM server URL. Set OSRM_HOST env var to use a local server (e.g. http://localhost:5000)
+OSRM_HOST = os.environ.get("OSRM_HOST", "http://router.project-osrm.org")
+
 # Cache HTTP requests (other than map requests, which I think are too complicated
 #  to do this with). This is a SQLITE cache..
 cache_fn = os.path.join(cache_dir, "requests_cache")
@@ -48,13 +51,9 @@ def get_transit_times(G, origin_point, towards_origin=True, profile='driving'):
         chunk = ";".join(chunk)
 
         query = (
-            "http://router.project-osrm.org/table/v1/%s/%s;%s?%ss=0"
-            % (profile, end, chunk, origin_is)
+            "%s/table/v1/%s/%s;%s?%ss=0"
+            % (OSRM_HOST, profile, end, chunk, origin_is)
         )
-        # query = (
-        #     "http://maps.motorshed.io/osrm/table/v1/driving/%s;%s?destinations=0"
-        #     % (end, chunk)
-        # )
 
         # print(query)
 
@@ -93,15 +92,9 @@ def osrm(
     start = "%f,%f" % (start_node["lon"], start_node["lat"])
     end = "%f,%f" % (end_node["lon"], end_node["lat"])
 
-    # if private_host:
-    # query = (
-    #     "http://maps.motorshed.io/osrm/route/v1/%s/%s;%s?steps=true&annotations=true"
-    #     % (mode, start, end)
-    # )
-    # else:
     query = (
-        "http://router.project-osrm.org/route/v1/%s/%s;%s?steps=true&annotations=true"
-        % (mode, start, end)
+        "%s/route/v1/%s/%s;%s?steps=true&annotations=true"
+        % (OSRM_HOST, mode, start, end)
     )
     r = requests.get(query)
 

@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  osrm:
+    image: osrm/osrm-backend
+    container_name: motorshed-osrm
+    restart: unless-stopped
+    volumes:
+      - ./web/osrm-data:/data
+    command: osrm-routed --algorithm mld /data/california-latest.osrm
+    ports:
+      - "5001:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: web/backend/Dockerfile
+    container_name: motorshed-backend
+    restart: unless-stopped
+    environment:
+      - OSRM_HOST=http://osrm:5000
+    depends_on:
+      osrm:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/frontend/Dockerfile
+    container_name: motorshed-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"

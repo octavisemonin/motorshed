@@ -1,0 +1,1 @@
+/api/* https://YOUR_VPS_IP_OR_DOMAIN/api/:splat 200
