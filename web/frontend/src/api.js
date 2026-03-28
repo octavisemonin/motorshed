@@ -10,8 +10,8 @@ const BASE = import.meta.env.DEV ? '/api' : 'http://65.108.156.188:8000/api'
  * Start a new motorshed computation.
  * @returns {Promise<string>} job_id
  */
-export async function startCompute({ lat, lng, radiusKm, direction, place }) {
-  const body = { lat, lng, radius_km: radiusKm, direction }
+export async function startCompute({ lat, lng, radiusKm, direction, mode, place }) {
+  const body = { lat, lng, radius_km: radiusKm, direction, mode: mode || 'driving' }
   if (place) body.place = place
   const res = await fetch(`${BASE}/compute`, {
     method: 'POST',

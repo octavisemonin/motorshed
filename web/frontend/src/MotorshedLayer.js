@@ -79,9 +79,9 @@ export function buildMotorshedLayer(geojson, direction, theme = 'dark') {
     getColor: d => interpolateColor(cmap, d.properties.traffic),
 
     // Width scales with normalized traffic: thin for low, thick for high
-    getWidth: d => 0.3 + d.properties.traffic * 2.5,
+    getWidth: d => 0.5 + d.properties.traffic * 2.5,
     widthUnits: 'pixels',
-    widthMinPixels: 0.3,
+    widthMinPixels: 0.5,
     widthMaxPixels: 3.5,
     widthScale: 1,
 

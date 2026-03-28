@@ -26,6 +26,7 @@ export default function App() {
   const [direction, setDirection] = useState('to')
   const [boundaryMode, setBoundaryMode] = useState('radius') // 'radius' or 'place'
   const [placeName, setPlaceName] = useState('')
+  const [mode, setMode] = useState('driving') // 'driving', 'cycling', 'walking'
   const [theme, setTheme] = useState('dark') // 'dark' or 'light'
   const [jobState, setJobState] = useState(null)   // { status, progress, message, error }
   const [geojson, setGeojson] = useState(null)
@@ -66,6 +67,7 @@ export default function App() {
         lng: origin.lng,
         radiusKm,
         direction,
+        mode,
         place: boundaryMode === 'place' && placeName.trim() ? placeName.trim() : null,
       })
     } catch (err) {
@@ -89,7 +91,7 @@ export default function App() {
       },
     })
     cancelRef.current = cancel
-  }, [origin, radiusKm, direction, boundaryMode, placeName])
+  }, [origin, radiusKm, direction, mode, boundaryMode, placeName])
 
   // Build deck.gl layers
   const layers = []
@@ -234,6 +236,25 @@ export default function App() {
                   onClick={() => setDirection(d)}
                 >
                   {d === 'to' ? 'To origin' : 'From origin'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Mode</label>
+            <div className="toggle-group toggle-group-3">
+              {[
+                ['driving', 'Drive'],
+                ['cycling', 'Bike'],
+                ['walking', 'Walk'],
+              ].map(([m, label]) => (
+                <button
+                  key={m}
+                  className={mode === m ? 'active' : ''}
+                  onClick={() => setMode(m)}
+                >
+                  {label}
                 </button>
               ))}
             </div>

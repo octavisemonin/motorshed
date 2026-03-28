@@ -49,43 +49,82 @@ def _wait_for_server(url, timeout=60):
     return False
 
 
-def _download_osm_bbox(south, west, north, east, filepath):
+# Highway types to download per mode.
+# Driving: standard road network
+# Cycling: roads + bike infrastructure
+# Walking: roads + all pedestrian infrastructure
+HIGHWAY_TYPES = {
+    "car.lua": "motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link",
+    "bicycle.lua": "motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|cycleway|path|track|pedestrian",
+    "foot.lua": None,  # Download ALL highways — foot.lua decides what's routable
+}
+
+
+def _download_osm_bbox(south, west, north, east, filepath, lua_profile="car.lua", on_status=None):
     """Download raw OSM data for a bounding box from Overpass API."""
+    on_status = on_status or (lambda msg: None)
     # Add a small buffer to ensure we get roads at the edges
     buf = 0.005
+    highway_filter = HIGHWAY_TYPES.get(lua_profile, HIGHWAY_TYPES["car.lua"])
+    if highway_filter is None:
+        # Download all highways — let OSRM's profile decide what's routable
+        way_filter = f'way["highway"]({south - buf},{west - buf},{north + buf},{east + buf});'
+    else:
+        way_filter = f'way["highway"~"{highway_filter}"]({south - buf},{west - buf},{north + buf},{east + buf});'
     query = f"""
     [out:xml][timeout:120];
     (
-      way["highway"~"motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link"]
-        ({south - buf},{west - buf},{north + buf},{east + buf});
+      {way_filter}
     );
     (._;>;);
     out body;
     """
-    r = req.post(
-        "https://overpass-api.de/api/interpreter",
-        data={"data": query},
-        timeout=120,
-    )
-    r.raise_for_status()
-    with open(filepath, "wb") as f:
-        f.write(r.content)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            r = req.post(
+                "https://overpass-api.de/api/interpreter",
+                data={"data": query},
+                timeout=120,
+            )
+            r.raise_for_status()
+            with open(filepath, "wb") as f:
+                f.write(r.content)
+            return
+        except (req.ConnectionError, req.Timeout, req.HTTPError) as exc:
+            if attempt == max_retries:
+                raise
+            delay = 2 ** attempt  # 2s, 4s
+            on_status(f"Overpass request failed, retrying in {delay}s (attempt {attempt}/{max_retries})…")
+            time.sleep(delay)
 
 
-def _download_osm_place(place, filepath):
+def _download_osm_place(place, filepath, lua_profile="car.lua", on_status=None):
     """Download raw OSM data for a named place.
     Uses Nominatim to get the bounding box, then downloads via Overpass bbox query.
     This is much faster than Overpass area queries.
     """
-    # Geocode the place to get its bounding box
-    r = req.get(
-        "https://nominatim.openstreetmap.org/search",
-        params={"q": place, "format": "json", "limit": 1},
-        headers={"User-Agent": "Motorshed/1.0"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    results = r.json()
+    on_status = on_status or (lambda msg: None)
+    # Geocode the place to get its bounding box (with retries)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            r = req.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": place, "format": "json", "limit": 1},
+                headers={"User-Agent": "Motorshed/1.0"},
+                timeout=30,
+            )
+            r.raise_for_status()
+            results = r.json()
+            break
+        except (req.ConnectionError, req.Timeout, req.HTTPError) as exc:
+            if attempt == max_retries:
+                raise
+            delay = 2 ** attempt
+            on_status(f"Nominatim request failed, retrying in {delay}s (attempt {attempt}/{max_retries})…")
+            time.sleep(delay)
+
     if not results:
         raise ValueError(f"Place not found: {place}")
 
@@ -93,7 +132,7 @@ def _download_osm_place(place, filepath):
     south, north = float(bbox[0]), float(bbox[1])
     west, east = float(bbox[2]), float(bbox[3])
 
-    _download_osm_bbox(south, west, north, east, filepath)
+    _download_osm_bbox(south, west, north, east, filepath, lua_profile=lua_profile, on_status=on_status)
 
 
 class LocalOSRM:
@@ -110,11 +149,14 @@ class LocalOSRM:
             ...
     """
 
-    def __init__(self, lat, lng, radius_km=3, place=None, on_status=None):
+    def __init__(self, lat, lng, radius_km=3, place=None, lua_profile="car.lua",
+                 osm_file=None, on_status=None):
         self.lat = lat
         self.lng = lng
         self.radius_km = radius_km
         self.place = place
+        self.lua_profile = lua_profile
+        self.osm_file = osm_file  # Pre-downloaded OSM file to use
         self.on_status = on_status or (lambda msg: None)
         self.host = None
         self._port = None
@@ -134,10 +176,13 @@ class LocalOSRM:
         self._tmpdir = tempfile.mkdtemp(prefix="osrm_", dir=OSRM_TMPDIR)
         osm_path = os.path.join(self._tmpdir, "graph.osm")
 
-        # Step 1: Download raw OSM data
-        if self.place:
+        # Step 1: Get raw OSM data (use pre-downloaded file or download fresh)
+        if self.osm_file:
+            import shutil
+            shutil.copy2(self.osm_file, osm_path)
+        elif self.place:
             self.on_status(f"Downloading road data for {self.place}…")
-            _download_osm_place(self.place, osm_path)
+            _download_osm_place(self.place, osm_path, lua_profile=self.lua_profile, on_status=self.on_status)
         else:
             self.on_status("Downloading road data from OpenStreetMap…")
             # Convert radius to approximate bounding box
@@ -150,6 +195,8 @@ class LocalOSRM:
                 self.lat - dlat, self.lng - dlng,
                 self.lat + dlat, self.lng + dlng,
                 osm_path,
+                lua_profile=self.lua_profile,
+                on_status=self.on_status,
             )
 
         file_size = os.path.getsize(osm_path)
@@ -160,7 +207,7 @@ class LocalOSRM:
         # Step 2: Run OSRM extract
         self.on_status("Processing road network (extract)…")
         self._docker_run(
-            "osrm-extract", "-p", "/opt/car.lua", "/data/graph.osm"
+            "osrm-extract", "-p", f"/opt/{self.lua_profile}", "/data/graph.osm"
         )
 
         # Step 3: Run OSRM partition

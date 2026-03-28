@@ -42,6 +42,7 @@ class ComputeRequest(BaseModel):
     lng: float = Field(..., description="Origin longitude")
     radius_km: float = Field(3.0, ge=0.5, le=20.0, description="Search radius in km")
     direction: str = Field("to", description="'to', 'from'")
+    mode: str = Field("driving", description="Routing mode: 'driving', 'cycling', or 'walking'")
     place: str | None = Field(None, description="City/place name (e.g. 'San Francisco, CA'). If set, radius is ignored.")
 
 
@@ -68,6 +69,7 @@ async def compute(req: ComputeRequest):
         req.radius_km,
         req.direction,
         req.place,
+        req.mode,
         jobs,
     )
 
