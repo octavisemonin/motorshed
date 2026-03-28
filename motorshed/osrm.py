@@ -104,7 +104,7 @@ def osrm(
 
     except (KeyError, IndexError):
         print(f"No route found from ({start}) to ({end})")
-        route, transit_time = [], np.NaN
+        route, transit_time = [], np.nan
 
     return route, transit_time, r
 
