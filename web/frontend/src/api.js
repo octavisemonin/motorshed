@@ -1,13 +1,13 @@
 /**
- * API client for the Motorshed backend.
+ * API client for the Travelshed backend.
  */
 
 // In dev, Vite proxies /api to localhost:8000.
-// In production, Cloudflare Pages _redirects proxies /api to the VPS.
+// In production on VPS (port 80), nginx proxies /api to backend.
 const BASE = '/api'
 
 /**
- * Start a new motorshed computation.
+ * Start a new travelshed computation.
  * @returns {Promise<string>} job_id
  */
 export async function startCompute({ lat, lng, radiusKm, direction, mode, place }) {

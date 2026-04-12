@@ -169,7 +169,7 @@ export default function App() {
         {isMobile && !panelOpen && (
           <div className="sheet-collapsed" onClick={() => setPanelOpen(true)}>
             <div className="sheet-collapsed-left">
-              <strong>Motorshed</strong>
+              <strong>Travelshed</strong>
               <span className="sheet-origin-hint">
                 {origin
                   ? `${origin.lat.toFixed(3)}, ${origin.lng.toFixed(3)}`
@@ -190,12 +190,12 @@ export default function App() {
         <div className={`sidebar-content ${isMobile && !panelOpen ? 'hidden' : ''}`}>
           {!isMobile && (
             <>
-              <h1>Motorshed</h1>
+              <h1>Travelshed</h1>
               <p className="tagline">Traffic routing visualizer</p>
             </>
           )}
           {isMobile && (
-            <h1 style={{ marginBottom: 12 }}>Motorshed</h1>
+            <h1 style={{ marginBottom: 12 }}>Travelshed</h1>
           )}
 
           <div className="field">
@@ -302,7 +302,7 @@ export default function App() {
             onClick={handleCompute}
             disabled={!origin || isComputing}
           >
-            {isComputing ? 'Computing…' : 'Compute Motorshed'}
+            {isComputing ? 'Computing…' : 'Compute Travelshed'}
           </button>
 
           <p className="hint">
