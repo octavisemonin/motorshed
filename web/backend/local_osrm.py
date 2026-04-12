@@ -12,6 +12,7 @@ We download raw OSM data (rather than re-exporting the OSMnx graph)
 because OSRM needs the original OSM ways/relations to route correctly.
 """
 
+import hashlib
 import os
 import shutil
 import socket
@@ -20,6 +21,9 @@ import tempfile
 import time
 
 import requests as req
+
+# Directory for caching downloaded OSM files
+_OSM_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "motorshed", "cache", "osm_downloads")
 
 # When running inside Docker, temp files must be on a path shared with the host
 # so sibling OSRM containers can mount them. Set OSRM_TMPDIR to a shared path.
@@ -61,7 +65,7 @@ HIGHWAY_TYPES = {
 
 
 def _download_osm_bbox(south, west, north, east, filepath, lua_profile="car.lua", on_status=None):
-    """Download raw OSM data for a bounding box from Overpass API."""
+    """Download raw OSM data for a bounding box from Overpass API. Uses file cache."""
     on_status = on_status or (lambda msg: None)
     # Add a small buffer to ensure we get roads at the edges
     buf = 0.005
@@ -79,6 +83,16 @@ def _download_osm_bbox(south, west, north, east, filepath, lua_profile="car.lua"
     (._;>;);
     out body;
     """
+
+    # Check file cache
+    cache_key = hashlib.sha256(query.encode()).hexdigest()[:16]
+    os.makedirs(_OSM_CACHE_DIR, exist_ok=True)
+    cache_path = os.path.join(_OSM_CACHE_DIR, f"{cache_key}.osm")
+    if os.path.exists(cache_path):
+        on_status("Using cached road data")
+        shutil.copy2(cache_path, filepath)
+        return
+
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
@@ -90,6 +104,8 @@ def _download_osm_bbox(south, west, north, east, filepath, lua_profile="car.lua"
             r.raise_for_status()
             with open(filepath, "wb") as f:
                 f.write(r.content)
+            # Save to cache
+            shutil.copy2(filepath, cache_path)
             return
         except (req.ConnectionError, req.Timeout, req.HTTPError) as exc:
             if attempt == max_retries:

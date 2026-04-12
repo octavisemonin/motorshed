@@ -40,6 +40,12 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
     try:
         import osmnx as ox
 
+        # Enable osmnx's built-in Overpass API cache
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = os.path.join(
+            os.path.dirname(__file__), "..", "..", "motorshed", "cache", "osmnx"
+        )
+
         towards_origin = (direction != "from")
 
         # Map mode to OSMnx network type and OSRM profile
