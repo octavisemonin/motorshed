@@ -1,5 +1,5 @@
 """
-Motorshed Web API — FastAPI backend.
+Travelshed Web API — FastAPI backend.
 
 Endpoints:
   POST /api/compute          Start a new computation job
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 import job_runner
 
-app = FastAPI(title="Motorshed Web API")
+app = FastAPI(title="Travelshed Web API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,7 +33,7 @@ app.add_middleware(
 # In-memory job store. For production, swap with Redis or a database.
 jobs: dict = {}
 
-# Thread pool for running blocking motorshed computation off the event loop
+# Thread pool for running blocking travelshed computation off the event loop
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
@@ -48,7 +48,7 @@ class ComputeRequest(BaseModel):
 
 @app.post("/api/compute")
 async def compute(req: ComputeRequest):
-    """Start a motorshed computation. Returns a job_id to poll for results."""
+    """Start a travelshed computation. Returns a job_id to poll for results."""
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
         "status": "pending",

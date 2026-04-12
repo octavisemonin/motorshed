@@ -17,7 +17,7 @@ services:
   # Only needed if you have pre-processed OSRM data.
   osrm:
     image: osrm/osrm-backend
-    container_name: motorshed-osrm
+    container_name: travelshed-osrm
     restart: unless-stopped
     profiles: ["prebuilt"]
     volumes:
@@ -35,19 +35,19 @@ services:
     build:
       context: .
       dockerfile: web/backend/Dockerfile
-    container_name: motorshed-backend
+    container_name: travelshed-backend
     restart: unless-stopped
     volumes:
       # Mount Docker socket so backend can spawn on-demand OSRM containers
       - /var/run/docker.sock:/var/run/docker.sock
       # Shared temp dir — sibling OSRM containers mount from the host,
       # so the backend's temp files must be on a host-visible path.
-      - /tmp/motorshed-osrm:/tmp/motorshed-osrm
+      - /tmp/travelshed-osrm:/tmp/travelshed-osrm
     environment:
       # Leave OSRM_HOST empty for on-demand mode.
       # Set to http://osrm:5000 for pre-built mode.
       - OSRM_HOST=${OSRM_HOST:-}
-      - OSRM_TMPDIR=/tmp/motorshed-osrm
+      - OSRM_TMPDIR=/tmp/travelshed-osrm
       - DOCKER_HOST_ADDR=host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -58,9 +58,33 @@ services:
     build:
       context: .
       dockerfile: web/frontend/Dockerfile
-    container_name: motorshed-frontend
+    container_name: travelshed-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "80:80"
+
+  # Cloudflare Tunnel: exposes the frontend (with nginx API proxy) over HTTPS.
+  # No domain or open ports required — Cloudflare assigns a URL.
+  #
+  # Setup (one-time):
+  #   1. Install cloudflared locally: brew install cloudflared
+  #   2. Login: cloudflared tunnel login
+  #   3. Create tunnel: cloudflared tunnel create travelshed
+  #   4. Copy the tunnel token and set it as CLOUDFLARE_TUNNEL_TOKEN env var
+  #      or in a .env file next to docker-compose.yml
+  #   5. In Cloudflare dashboard, add a Public Hostname for the tunnel
+  #      pointing to http://frontend:80
+  #
+  # Then: docker compose up -d tunnel
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: travelshed-tunnel
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      - frontend
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}

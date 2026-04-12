@@ -1,5 +1,5 @@
 """
-Background job runner: wraps the existing motorshed Python algorithm
+Background job runner: wraps the existing travelshed Python algorithm
 and converts results to GeoJSON for the frontend.
 
 Uses the brute_force algorithm which queries OSRM for an actual route
@@ -26,7 +26,7 @@ OSRM_HOST = os.environ.get("OSRM_HOST", "")
 def run_job(job_id: str, lat: float, lng: float, radius_km: float,
             direction: str, place: str | None, mode: str, jobs: dict):
     """
-    Run the motorshed algorithm for a given origin (lat, lng) and
+    Run the travelshed algorithm for a given origin (lat, lng) and
     update the shared `jobs` dict with progress and results.
 
     If `place` is provided (e.g. "San Francisco, CA"), the road network

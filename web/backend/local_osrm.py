@@ -128,7 +128,7 @@ def _download_osm_place(place, filepath, lua_profile="car.lua", on_status=None):
             r = req.get(
                 "https://nominatim.openstreetmap.org/search",
                 params={"q": place, "format": "json", "limit": 1},
-                headers={"User-Agent": "Motorshed/1.0"},
+                headers={"User-Agent": "Travelshed/1.0"},
                 timeout=30,
             )
             r.raise_for_status()
