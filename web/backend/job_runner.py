@@ -40,6 +40,12 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
     try:
         import osmnx as ox
 
+        # Enable osmnx's built-in Overpass API cache
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = os.path.join(
+            os.path.dirname(__file__), "..", "..", "motorshed", "cache", "osmnx"
+        )
+
         towards_origin = (direction != "from")
 
         # Map mode to OSMnx network type and OSRM profile
@@ -249,12 +255,14 @@ def graph_to_geojson(G, direction: str) -> dict:
 
     # Match the original renderer's normalization: log2(traffic + 2)
     # The +2 prevents very small values from compressing the scale
-    min_intensity_ratio = 0.08  # minimum visible intensity (~20/255)
+    # Baseline traffic is 1 (every edge starts here), so log2(1+2) = log2(3)
+    # Subtract this so baseline edges map to intensity 0 (invisible)
+    baseline = math.log2(3.0)
 
     # First pass: compute max intensity for normalization
     max_intensity = 0.0
     for _, _, data in G.edges(data=True):
-        intensity = math.log2(float(data["through_traffic"]) + 2.0)
+        intensity = math.log2(float(data["through_traffic"]) + 2.0) - baseline
         if intensity > max_intensity:
             max_intensity = intensity
     if max_intensity == 0:
@@ -269,10 +277,8 @@ def graph_to_geojson(G, direction: str) -> dict:
         seen.add((u, v))
 
         raw_traffic = float(data.get("through_traffic", 0))
-        # Normalized intensity matching render_mpl.py
-        intensity = math.log2(raw_traffic + 2.0) / max_intensity
-        # Apply minimum intensity ratio
-        intensity = intensity * (1.0 - min_intensity_ratio) + min_intensity_ratio
+        intensity = (math.log2(raw_traffic + 2.0) - baseline) / max_intensity
+        intensity = max(0.0, min(1.0, intensity))
 
         u_data = G.nodes[u]
         v_data = G.nodes[v]

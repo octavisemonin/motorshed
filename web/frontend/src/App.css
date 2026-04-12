@@ -11,6 +11,10 @@ body {
   overflow: hidden;
 }
 
+.light-theme {
+  background: #fff;
+}
+
 #root {
   width: 100vw;
   height: 100vh;

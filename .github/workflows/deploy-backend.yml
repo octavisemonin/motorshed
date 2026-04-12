@@ -1,0 +1,28 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web/backend/**'
+      - 'motorshed/**'
+      - 'docker-compose.yml'
+      - 'setup.py'
+
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Hetzner VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 65.108.156.188
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /root/motorshed
+            git pull origin master
+            docker compose build backend
+            docker compose up -d backend

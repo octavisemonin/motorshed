@@ -7,8 +7,14 @@ import { buildMotorshedLayer } from './MotorshedLayer'
 
 // Map styles — no API key required
 const MAP_STYLES = {
-  dark: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
-  light: 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json',
+  dark: {
+    unlabeled: 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
+    labeled: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  },
+  light: {
+    unlabeled: 'https://basemaps.cartocdn.com/gl/positron-nolabels-gl-style/style.json',
+    labeled: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  },
 }
 
 const INITIAL_VIEW = {
@@ -24,10 +30,13 @@ export default function App() {
   const [origin, setOrigin] = useState(null)       // { lat, lng }
   const [radiusKm, setRadiusKm] = useState(3)
   const [direction, setDirection] = useState('to')
-  const [boundaryMode, setBoundaryMode] = useState('radius') // 'radius' or 'place'
+  const [boundaryMode, setBoundaryMode] = useState('place') // 'radius' or 'place'
   const [placeName, setPlaceName] = useState('')
   const [mode, setMode] = useState('driving') // 'driving', 'cycling', 'walking'
-  const [theme, setTheme] = useState('dark') // 'dark' or 'light'
+  const [colorScheme, setColorScheme] = useState(
+    () => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  )
+  const [basemap, setBasemap] = useState('unlabeled') // 'unlabeled', 'labeled', 'none'
   const [jobState, setJobState] = useState(null)   // { status, progress, message, error }
   const [geojson, setGeojson] = useState(null)
 
@@ -41,6 +50,14 @@ export default function App() {
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // Track OS color scheme
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    const onChange = (e) => setColorScheme(e.matches ? 'light' : 'dark')
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
   }, [])
 
   const handleMapClick = useCallback((info) => {
@@ -94,11 +111,12 @@ export default function App() {
   }, [origin, radiusKm, direction, mode, boundaryMode, placeName])
 
   // Build deck.gl layers
+  const isDark = colorScheme === 'dark'
   const layers = []
 
   // Motorshed road-traffic layer
   if (geojson) {
-    layers.push(buildMotorshedLayer(geojson, direction, theme))
+    layers.push(buildMotorshedLayer(geojson, direction, isDark ? 'dark' : 'light'))
   }
 
   // Origin marker
@@ -110,8 +128,8 @@ export default function App() {
         getPosition: d => [d.lng, d.lat],
         getRadius: 60,
         radiusUnits: 'meters',
-        getFillColor: theme === 'dark' ? [255, 255, 255, 220] : [30, 30, 30, 220],
-        getLineColor: theme === 'dark' ? [224, 96, 58, 255] : [20, 60, 150, 255],
+        getFillColor: isDark ? [255, 255, 255, 220] : [30, 30, 30, 220],
+        getLineColor: isDark ? [224, 96, 58, 255] : [20, 60, 150, 255],
         stroked: true,
         lineWidthMinPixels: 3,
         pickable: false,
@@ -124,7 +142,7 @@ export default function App() {
 
   return (
     <div
-      className={theme === 'light' ? 'app-root light-theme' : 'app-root'}
+      className={!isDark ? 'app-root light-theme' : 'app-root'}
       style={{ width: '100vw', height: '100vh', position: 'relative' }}
     >
       <DeckGL
@@ -135,7 +153,7 @@ export default function App() {
         onClick={handleMapClick}
         getCursor={({ isDragging }) => isDragging ? 'grabbing' : 'crosshair'}
       >
-        <Map mapStyle={MAP_STYLES[theme]} />
+        {basemap !== 'none' && <Map mapStyle={MAP_STYLES[colorScheme][basemap]} />}
       </DeckGL>
 
       {/* ---- Panel (sidebar on desktop, bottom sheet on mobile) ---- */}
@@ -187,7 +205,7 @@ export default function App() {
                 className={boundaryMode === 'radius' ? 'active' : ''}
                 onClick={() => setBoundaryMode('radius')}
               >
-                Radius
+                Square
               </button>
               <button
                 className={boundaryMode === 'place' ? 'active' : ''}
@@ -201,8 +219,8 @@ export default function App() {
           {boundaryMode === 'radius' ? (
             <div className="field">
               <label>
-                Radius
-                <span>{radiusKm} km</span>
+                Diameter
+                <span>{radiusKm * 2} km</span>
               </label>
               <input
                 type="range"
@@ -261,20 +279,21 @@ export default function App() {
           </div>
 
           <div className="field">
-            <label>Theme</label>
-            <div className="toggle-group">
-              <button
-                className={theme === 'dark' ? 'active' : ''}
-                onClick={() => setTheme('dark')}
-              >
-                Dark
-              </button>
-              <button
-                className={theme === 'light' ? 'active' : ''}
-                onClick={() => setTheme('light')}
-              >
-                Light
-              </button>
+            <label>Basemap</label>
+            <div className="toggle-group toggle-group-3">
+              {[
+                ['none', 'None'],
+                ['unlabeled', 'Unlabeled'],
+                ['labeled', 'Labeled'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className={basemap === key ? 'active' : ''}
+                  onClick={() => setBasemap(key)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
