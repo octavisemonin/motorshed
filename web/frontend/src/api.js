@@ -3,8 +3,8 @@
  */
 
 // In dev, Vite proxies /api to localhost:8000.
-// In production, call the VPS backend directly.
-const BASE = import.meta.env.DEV ? '/api' : 'http://65.108.156.188:8000/api'
+// In production, Cloudflare Pages _redirects proxies /api to the VPS.
+const BASE = '/api'
 
 /**
  * Start a new motorshed computation.
