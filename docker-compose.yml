@@ -65,19 +65,14 @@ services:
     ports:
       - "80:80"
 
-  # Cloudflare Tunnel: exposes the frontend (with nginx API proxy) over HTTPS.
-  # No domain or open ports required — Cloudflare assigns a URL.
+  # Cloudflare Quick Tunnel: exposes the frontend over HTTPS with a free
+  # random *.trycloudflare.com URL. No domain, token, or account needed.
   #
-  # Setup (one-time):
-  #   1. Install cloudflared locally: brew install cloudflared
-  #   2. Login: cloudflared tunnel login
-  #   3. Create tunnel: cloudflared tunnel create travelshed
-  #   4. Copy the tunnel token and set it as CLOUDFLARE_TUNNEL_TOKEN env var
-  #      or in a .env file next to docker-compose.yml
-  #   5. In Cloudflare dashboard, add a Public Hostname for the tunnel
-  #      pointing to http://frontend:80
+  # Start: docker compose --profile tunnel up -d
+  # Find URL: docker compose logs tunnel | grep trycloudflare
   #
-  # Then: docker compose up -d tunnel
+  # The URL changes on each restart. For a stable URL, register a domain
+  # and use a named Cloudflare Tunnel instead.
   tunnel:
     image: cloudflare/cloudflared:latest
     container_name: travelshed-tunnel
@@ -85,6 +80,4 @@ services:
     profiles: ["tunnel"]
     depends_on:
       - frontend
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --url http://frontend:80
