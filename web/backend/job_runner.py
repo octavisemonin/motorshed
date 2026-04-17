@@ -24,7 +24,8 @@ OSRM_HOST = os.environ.get("OSRM_HOST", "")
 
 
 def run_job(job_id: str, lat: float, lng: float, radius_km: float,
-            direction: str, place: str | None, mode: str, jobs: dict):
+            direction: str, place: str | None, mode: str, jobs: dict,
+            routing_method: str = "osrm"):
     """
     Run the travelshed algorithm for a given origin (lat, lng) and
     update the shared `jobs` dict with progress and results.
@@ -104,13 +105,13 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
             # Use pre-built OSRM server
             _route_with_host(G, center_node, towards_origin, direction,
                              mode_cfg["osrm_profile"],
-                             OSRM_HOST, job_id, jobs, update)
+                             OSRM_HOST, job_id, jobs, update, routing_method)
         else:
             # Spin up on-demand OSRM for just this area
             _route_on_demand(G, lat, lng, radius_km, place,
                              mode_cfg["lua"], mode_cfg["osrm_profile"],
                              center_node, towards_origin,
-                             direction, job_id, jobs, update)
+                             direction, job_id, jobs, update, routing_method)
 
         # --- Stage 3: Final GeoJSON ---
         update(90, "Finalizing…")
@@ -128,18 +129,25 @@ def run_job(job_id: str, lat: float, lng: float, radius_km: float,
 
 
 def _route_with_host(G, center_node, towards_origin, direction,
-                     osrm_profile, osrm_host, job_id, jobs, update):
+                     osrm_profile, osrm_host, job_id, jobs, update,
+                     routing_method="osrm"):
     """Route all nodes using a pre-configured OSRM server."""
     from motorshed import osrm as osrm_module
 
-    _do_routing(G, center_node, towards_origin, direction,
-                osrm_profile, osrm_module, job_id, jobs, update)
+    if routing_method == "table":
+        from motorshed.algos.table_propagation import run_table_propagation
+        run_table_propagation(G, center_node, osrm_module, towards_origin,
+                              osrm_profile, update=update)
+    else:
+        _do_routing(G, center_node, towards_origin, direction,
+                    osrm_profile, osrm_module, job_id, jobs, update)
 
 
 def _route_on_demand(G, lat, lng, radius_km, place,
                      lua_profile, osrm_profile,
                      center_node, towards_origin,
-                     direction, job_id, jobs, update):
+                     direction, job_id, jobs, update,
+                     routing_method="osrm"):
     """Download raw OSM data, spin up a temporary OSRM server, route, then tear down."""
     from local_osrm import LocalOSRM
     from motorshed import osrm as osrm_module
@@ -153,8 +161,13 @@ def _route_on_demand(G, lat, lng, radius_km, place,
         original_host = osrm_module.OSRM_HOST
         osrm_module.OSRM_HOST = local.host
         try:
-            _do_routing(G, center_node, towards_origin, direction,
-                        osrm_profile, osrm_module, job_id, jobs, update)
+            if routing_method == "table":
+                from motorshed.algos.table_propagation import run_table_propagation
+                run_table_propagation(G, center_node, osrm_module, towards_origin,
+                                      osrm_profile, update=update)
+            else:
+                _do_routing(G, center_node, towards_origin, direction,
+                            osrm_profile, osrm_module, job_id, jobs, update)
         finally:
             osrm_module.OSRM_HOST = original_host
 
