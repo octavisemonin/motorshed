@@ -33,6 +33,7 @@ export default function App() {
   const [boundaryMode, setBoundaryMode] = useState('place') // 'radius' or 'place'
   const [placeName, setPlaceName] = useState('')
   const [mode, setMode] = useState('driving') // 'driving', 'cycling', 'walking'
+  const [routingMethod, setRoutingMethod] = useState('osrm') // 'osrm' or 'table'
   const [colorScheme, setColorScheme] = useState(
     () => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
   )
@@ -86,6 +87,7 @@ export default function App() {
         direction,
         mode,
         place: boundaryMode === 'place' && placeName.trim() ? placeName.trim() : null,
+        routingMethod,
       })
     } catch (err) {
       setJobState({ status: 'error', progress: 0, message: '', error: err.message })
@@ -108,7 +110,7 @@ export default function App() {
       },
     })
     cancelRef.current = cancel
-  }, [origin, radiusKm, direction, mode, boundaryMode, placeName])
+  }, [origin, radiusKm, direction, mode, boundaryMode, placeName, routingMethod])
 
   // Build deck.gl layers
   const isDark = colorScheme === 'dark'
@@ -275,6 +277,24 @@ export default function App() {
                   {label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Algorithm</label>
+            <div className="toggle-group">
+              <button
+                className={routingMethod === 'osrm' ? 'active' : ''}
+                onClick={() => setRoutingMethod('osrm')}
+              >
+                Exact
+              </button>
+              <button
+                className={routingMethod === 'table' ? 'active' : ''}
+                onClick={() => setRoutingMethod('table')}
+              >
+                Fast
+              </button>
             </div>
           </div>
 

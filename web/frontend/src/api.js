@@ -10,8 +10,8 @@ const BASE = '/api'
  * Start a new travelshed computation.
  * @returns {Promise<string>} job_id
  */
-export async function startCompute({ lat, lng, radiusKm, direction, mode, place }) {
-  const body = { lat, lng, radius_km: radiusKm, direction, mode: mode || 'driving' }
+export async function startCompute({ lat, lng, radiusKm, direction, mode, place, routingMethod }) {
+  const body = { lat, lng, radius_km: radiusKm, direction, mode: mode || 'driving', routing_method: routingMethod || 'osrm' }
   if (place) body.place = place
   const res = await fetch(`${BASE}/compute`, {
     method: 'POST',
