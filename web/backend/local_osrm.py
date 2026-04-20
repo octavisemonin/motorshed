@@ -99,6 +99,7 @@ def _download_osm_bbox(south, west, north, east, filepath, lua_profile="car.lua"
             r = req.post(
                 "https://overpass-api.de/api/interpreter",
                 data={"data": query},
+                headers={"User-Agent": "Travelshed/1.0"},
                 timeout=120,
             )
             r.raise_for_status()
