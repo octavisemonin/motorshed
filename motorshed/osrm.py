@@ -26,13 +26,15 @@ def chunks(l, n):
         yield l[i : i + n]
 
 
-def get_transit_times(G, origin_point, towards_origin=True, profile='driving'):
+def get_transit_times(G, origin_point, towards_origin=True, profile='driving',
+                       progress_callback=None):
     """Calculate transit_time for every node in the graph, and add to
     G (in-place) as a 'transit_time' property on each node.
     :type towards_origin: bool
         If True, traffic is calculated from each node *to* the `origin_point`. If False,
         then traffic is `origin_point` *to* each node. This is not symmetric b/c of one-way streets,
         left turns, etc.
+    :param progress_callback: optional callable(chunk_idx, total_chunks) invoked after each chunk.
     """
 
     # Node ID -> actual node.
@@ -46,8 +48,10 @@ def get_transit_times(G, origin_point, towards_origin=True, profile='driving'):
 
     MAX_N_TABLE_SERVICE = 100
     origin_is = "destination" if towards_origin else "source"
+    all_chunks = list(chunks(starts, MAX_N_TABLE_SERVICE))
+    total_chunks = len(all_chunks)
     # the table service seems limited in number
-    for chunk in chunks(starts, MAX_N_TABLE_SERVICE):
+    for chunk_idx, chunk in enumerate(all_chunks):
         chunk = ";".join(chunk)
 
         query = (
@@ -65,6 +69,9 @@ def get_transit_times(G, origin_point, towards_origin=True, profile='driving'):
         else:
             # durations are nested differently when origin is src
             times.append(np.array(r.json()["durations"][0])[1:])
+
+        if progress_callback is not None:
+            progress_callback(chunk_idx + 1, total_chunks)
 
     times = np.concatenate(times)
 

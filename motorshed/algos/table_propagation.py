@@ -84,17 +84,29 @@ def run_table_propagation(G, origin_point, osrm_module, towards_origin,
     if update:
         update(10, f"Fetching transit times for {n} nodes…")
 
+    # Report progress every ~10% over the 10-60% range during table fetching.
+    last_reported = [10]
+
+    def on_chunk(done, total):
+        if update is None:
+            return
+        pct = 10 + int(50 * done / total)
+        if pct - last_reported[0] >= 10 or done == total:
+            last_reported[0] = pct
+            update(pct, f"Fetching transit times… {done}/{total} chunks")
+
     osrm_module.get_transit_times(G, origin_point,
                                   towards_origin=towards_origin,
-                                  profile=osrm_profile)
+                                  profile=osrm_profile,
+                                  progress_callback=on_chunk)
 
     if update:
-        update(50, "Building next-hop routing tree…")
+        update(60, "Building next-hop routing tree…")
 
     next_hop = build_next_hop_map(G, towards_origin=towards_origin)
 
     if update:
-        update(70, f"Propagating traffic from {len(next_hop)} nodes…")
+        update(75, f"Propagating traffic from {len(next_hop)} nodes…")
 
     missing = propagate_traffic(G, next_hop, towards_origin=towards_origin)
 
