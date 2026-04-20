@@ -39,31 +39,40 @@ def build_next_hop_map(G, towards_origin=True):
     return next_hop
 
 
-def propagate_traffic(G, next_hop, towards_origin=True):
+def propagate_traffic(G, next_hop, towards_origin=True, source_nodes=None):
     """Accumulate through_traffic on edges by summing subtree sizes.
 
-    Each node contributes 1 unit. Nodes are processed farthest-first so that
-    upstream contributions are fully accumulated before a node propagates
-    downstream. The edge (node → next_hop[node]) receives the node's total
-    accumulated traffic.
+    Only nodes in source_nodes originate 1 unit of traffic; all other nodes
+    start at 0 but still pass accumulated upstream traffic through. If
+    source_nodes is None, every node originates 1 unit (original behavior).
+
+    Nodes are processed farthest-first so upstream contributions are fully
+    accumulated before a node propagates downstream.
 
     Returns a set of (u, v) pairs for edges that were missing from the graph.
     """
     active = sorted(next_hop, key=lambda n: G.nodes[n].get("transit_time", 0), reverse=True)
-    node_traffic = {n: 1 for n in G.nodes()}
+
+    if source_nodes is not None:
+        source_set = set(source_nodes)
+        node_traffic = {n: (1 if n in source_set else 0) for n in G.nodes()}
+    else:
+        node_traffic = {n: 1 for n in G.nodes()}
+
     missing = set()
 
     for node in active:
         nxt = next_hop[node]
         traffic = node_traffic[node]
-        node_traffic[nxt] = node_traffic.get(nxt, 1) + traffic
-        try:
-            if towards_origin:
-                G.edges[node, nxt, 0]["through_traffic"] += traffic
-            else:
-                G.edges[nxt, node, 0]["through_traffic"] += traffic
-        except KeyError:
-            missing.add((node, nxt))
+        node_traffic[nxt] = node_traffic.get(nxt, 0) + traffic
+        if traffic > 0:
+            try:
+                if towards_origin:
+                    G.edges[node, nxt, 0]["through_traffic"] += traffic
+                else:
+                    G.edges[nxt, node, 0]["through_traffic"] += traffic
+            except KeyError:
+                missing.add((node, nxt))
 
     return missing
 
@@ -105,15 +114,28 @@ def run_table_propagation(G, origin_point, osrm_module, towards_origin,
 
     next_hop = build_next_hop_map(G, towards_origin=towards_origin)
 
-    if update:
-        update(75, f"Propagating traffic from {len(next_hop)} nodes…")
+    # Only intersection/dead-end nodes originate traffic — same set as _do_routing().
+    # Degree-2 waypoints along roads still *pass* accumulated traffic through but
+    # don't add their own unit, preventing every residential road from glowing.
+    G_undirected = G.to_undirected()
+    source_nodes = [nd for nd in G.nodes() if G_undirected.degree(nd) != 2]
 
-    missing = propagate_traffic(G, next_hop, towards_origin=towards_origin)
+    n_valid = sum(1 for nd in G.nodes() if G.nodes[nd].get("transit_time") is not None)
+    print(
+        f"table_propagation: {n} nodes total, {n_valid} with transit times, "
+        f"{len(source_nodes)} source (intersection) nodes, "
+        f"{len(next_hop)} with valid next hops"
+    )
+
+    if update:
+        update(75, f"Propagating traffic from {len(source_nodes)} intersection nodes…")
+
+    missing = propagate_traffic(G, next_hop, towards_origin=towards_origin,
+                                source_nodes=source_nodes)
 
     if update:
         update(85, "Traffic propagation complete.")
 
-    if missing:
-        print(f"table_propagation: {len(missing)} edges missing from graph (skipped)")
+    print(f"table_propagation: {len(missing)} edges missing from graph (skipped)")
 
     return missing
